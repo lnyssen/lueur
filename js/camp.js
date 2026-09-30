@@ -3,6 +3,7 @@
 import { rng, poly, disc, glow, ring, drawGirl, drawFox, icon, heart } from './draw.js';
 import { CHAPTERS } from './levels.js';
 import { foodOf } from './road.js';
+import { uiButton } from './icons.js';
 
 const pentagram = [0, 1, 2, 3, 4].map(i => {
   const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
@@ -226,8 +227,8 @@ export class Camp {
       ctx.stroke();
     }
     for (let i = 0; i < SKY.length; i++) {
-      const earned = i < this.ch || (i === this.ch && st.lit);
-      this.constellation(ctx, i, !earned ? null : i === this.ch ? 'new' : 'old');
+      const earned = i < Math.max(this.ch, st.best | 0) || (i === this.ch && st.lit);
+      this.constellation(ctx, i, !earned ? null : i === this.ch && st.lit ? 'new' : 'old');
     }
 
     // horizon
@@ -286,16 +287,7 @@ export class Camp {
       if (i < st.bond) glow(ctx, x, y, 12, 0.45);
     }
 
-    const arrow = (x, y, dir) => {
-      glow(ctx, x, y, 44, 0.3);
-      disc(ctx, x, y, 22, 'rgba(255,244,215,0.16)');
-      ctx.strokeStyle = 'rgba(255,244,215,0.85)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(x, y, 22, 0, Math.PI * 2);
-      ctx.stroke();
-      poly(ctx, [x - 6 * dir, y - 8, x + 8 * dir, y, x - 6 * dir, y + 8], 'rgba(255,244,215,0.9)');
-    };
+    const arrow = (x, y, dir) => uiButton(ctx, x, y, dir > 0 ? 'next' : 'back', { r: 24, glowing: dir > 0 });
     if (st.lit) {
       arrow(...this.back, -1);
       if (!this.last && t > 3) arrow(...this.next, 1);

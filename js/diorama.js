@@ -3,6 +3,7 @@
 import { mix, ease, rng, poly, disc, glow, ring, paw, hand, drawGirl, drawFox } from './draw.js';
 import { CHAPTERS } from './levels.js';
 import * as R from './rules.js';
+import { uiButton } from './icons.js';
 import { CAMP } from './road.js';
 
 const HW = 32, HH = 16;
@@ -16,7 +17,7 @@ const BASE = {
   top: ['#b3b0e8', '#f7f0d0'], left: ['#726eb2', '#e9b9a8'], right: ['#4b4884', '#b7a2cf'],
   lily: ['#4f9ea6', '#7ecb8f'], lilyS: ['#3a7a86', '#5fb078'],
   p: ['#f08aa8', '#f08a6c'], q: ['#6fb0f2', '#5f9fe0'],
-  u: ['#5fd0bc', '#4fc4ae'], v: ['#f0bf6a', '#f2b35a'], k: ['#8fd8f6', '#7fd8f0'],
+  u: ['#5fd0bc', '#4fc4ae'], v: ['#f0bf6a', '#f2b35a'], k: ['#8fd8f6', '#7fd8f0'], j: ['#b9a0f4', '#b79cf0'],
   plank: ['#d9a0c4', '#d8896f'], plankS: ['#8a5f96', '#a9604f'],
   reed: ['#5f5e9e', '#3a8f7f'], ink: ['#e6e2fa', '#5c4560'], hole: ['#1d1b38', '#5c4560'],
   glass: ['#8d88c8', '#ffdf8e'], roof: ['#e0708e', '#e8706a'], roofS: ['#a8506e', '#b9554f'],
@@ -48,7 +49,7 @@ const THEMES = {
     ripple: ['#a9a6e6', '#fff6d8'], roof: ['#f2c76a', '#f2b35a'], roofS: ['#c49a4a', '#d0903c'],
   },
 };
-const RAISE_COLOR = { r: 'p', s: 'q', k: 'k', u: 'u', v: 'v' };
+const RAISE_COLOR = { r: 'p', s: 'q', k: 'k', j: 'j', u: 'u', v: 'v' };
 
 const iso = (x, y) => [(x - y) * HW, (x + y) * HH];
 const same = (a, b) => a[0] === b[0] && a[1] === b[1];
@@ -83,7 +84,9 @@ export class Diorama {
     this.overview = false;
     this.cam = null;
     this.resetArm = 0;
-    this.tutorial = (this.g.state.chapter | 0) === 0 && this.stage === 0;
+    this.opts = this.g.state.opts;
+    this.tutorial = (this.g.state.chapter | 0) === 0 && this.stage === 0 && this.opts.hints !== 'never';
+    this.ask = false;
     this.mirT = 1;
     this.beamA = R.beam(L, this.s)?.lit ? 1 : 0;
     this.br = L.pivot ? { turning: false, t: 0, riders: [] } : null;
@@ -156,7 +159,7 @@ export class Diorama {
     const { x0, x1, y0, y1 } = this.bounds;
     const fit = Math.min((v.w - 28) / (x1 - x0), (v.h - 170) / (y1 - y0), 2.3);
     const close = Math.max(fit, MIN_TILE / (HW * 2));
-    this.canZoom = close > fit * 1.08;
+    this.canZoom = close > fit * 1.08 && this.opts.zoom !== 'far';
     const k = this.canZoom ? ease(this.zoomK) : 0;
     this.sc = fit + (close - fit) * k;
     const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
@@ -172,8 +175,8 @@ export class Diorama {
     this.ui = {
       girl: [v.w / 2 - 36, v.h - 46],
       fox: [v.w / 2 + 36, v.h - 46],
-      reset: [36, 36],
-      view: [84, 36],
+      reset: [38, 38],
+      view: [90, 38],
     };
   }
 
@@ -184,7 +187,7 @@ export class Diorama {
     if (near(this.ui.girl, 30)) { this.sel = 'girl'; this.g.sfx('tap'); return; }
     if (near(this.ui.fox, 30)) {
       // toucher le renard déjà choisi : il montre où aller
-      if (this.sel === 'fox') this.idle = HINT_AFTER;
+      if (this.sel === 'fox') this.ask = true;
       this.sel = 'fox';
       this.g.sfx('yip');
       return;
@@ -207,7 +210,7 @@ export class Diorama {
         this.g.sfx(who === 'fox' ? 'yip' : 'tap');
         return;
       }
-      if (who === 'fox') { this.idle = HINT_AFTER; this.g.sfx('yip'); return; }
+      if (who === 'fox') { this.ask = true; this.g.sfx('yip'); return; }
     }
     const lx = (sx - this.ox) / this.sc, ly = (sy - this.oy) / this.sc;
     const x = Math.round((lx / HW + ly / HH) / 2), y = Math.round((ly / HH - lx / HW) / 2);
@@ -218,7 +221,7 @@ export class Diorama {
     if (type !== 'down' || this.done) return;
     if (k === 'Tab' || k === ' ') this.sel = this.sel === 'girl' ? 'fox' : 'girl';
     if (k === 'r') this.load();
-    if (k === 'h') this.idle = HINT_AFTER;
+    if (k === 'h') this.ask = true;
     const d = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[k];
     const me = this.s[this.sel];
     if (d && !this.anim[this.sel].step) this.tap(me[0] + d[0], me[1] + d[1]);
@@ -347,8 +350,11 @@ export class Diorama {
     // l'indice : après un moment sans bouger, le renard regarde vers le prochain endroit utile
     if (!this.done && still && !turning) {
       this.idle += dt;
-      const wait = this.tutorial && this.t < 60 ? 2.5 : HINT_AFTER;
-      if (this.idle > wait && !this.hint) {
+      // selon le réglage : tout seul après un moment, seulement à la demande, ou jamais
+      const wait = this.tutorial && this.t < 60 ? 2.5 : this.opts.hints === 'auto' ? HINT_AFTER : Infinity;
+      const asked = this.ask && this.opts.hints !== 'never';
+      this.ask = false;
+      if ((this.idle > wait || asked) && !this.hint) {
         this.hint = R.hint(L, this.s);
         if (this.hint && !this.tutorial) this.g.sfx('yip');
       }
@@ -356,9 +362,11 @@ export class Diorama {
 
     // vue d'ensemble au début, à la fin, pendant un indice ou à la demande ; sinon vue rapprochée
     this.layout();
-    const near = this.t > 1.6 && !this.done && !this.overview && !this.hint && !this.tutorial;
-    this.zoomK += Math.sign((near ? 1 : 0) - this.zoomK) * Math.min(Math.abs((near ? 1 : 0) - this.zoomK), dt * 1.6);
-    const glide = 1 - Math.exp(-dt * 4);
+    const always = this.opts.zoom === 'near';
+    const near = (always || this.t > 1.6) && !this.done && !this.overview && !this.hint && (always || !this.tutorial);
+    const calm = this.opts.calm;   // moins d'animations : la vue change d'un coup, sans glisser
+    this.zoomK = calm ? +near : this.zoomK + Math.sign(+near - this.zoomK) * Math.min(Math.abs(+near - this.zoomK), dt * 1.6);
+    const glide = calm ? 1 : 1 - Math.exp(-dt * 4);
     this.cam[0] += (this.aim[0] - this.cam[0]) * glide;
     this.cam[1] += (this.aim[1] - this.cam[1]) * glide;
     this.resetArm = Math.max(0, this.resetArm - dt);
@@ -368,6 +376,7 @@ export class Diorama {
       this.hint = null;
       if (this.final) {
         st.lit = true;
+        st.best = Math.max(st.best | 0, (st.chapter | 0) + 1);
         st.bridge = true;
         st.x = CAMP - 240;
         this.g.mood(true);
@@ -423,6 +432,11 @@ export class Diorama {
     } else if (kind === 'k') {
       ctx.moveTo(cx, cy - b * 1.3); ctx.lineTo(cx + a, cy); ctx.lineTo(cx, cy + b * 1.3); ctx.lineTo(cx - a, cy);
       ctx.closePath();
+    } else if (kind === 'j') {
+      // le losange barré : levée quand le cristal est éteint
+      ctx.moveTo(cx, cy - b * 1.3); ctx.lineTo(cx + a, cy); ctx.lineTo(cx, cy + b * 1.3); ctx.lineTo(cx - a, cy);
+      ctx.closePath();
+      ctx.moveTo(cx - a, cy); ctx.lineTo(cx + a, cy);
     }
     ctx.stroke();
   }
@@ -828,35 +842,17 @@ export class Diorama {
     }
     {
       const [x, y] = this.ui.reset, armed = this.resetArm > 0;
-      if (armed) glow(ctx, x, y, 40, 0.5);
-      disc(ctx, x, y, 18, armed ? 'rgba(255,214,130,0.4)' : 'rgba(255,255,255,0.1)');
-      const col = `rgba(255,244,215,${armed ? 1 : 0.7})`;
-      ctx.strokeStyle = col;
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      ctx.arc(x, y, 8, -0.4, Math.PI * 1.5);
-      ctx.stroke();
-      poly(ctx, [x - 1, y - 12.5, x + 5, y - 8, x - 1, y - 3.5], col);
+      uiButton(ctx, x, y, 'restart', { active: armed, glowing: armed });
       if (armed) {
+        // le temps qu'il reste pour confirmer
+        ctx.strokeStyle = '#ffd682';
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(x, y, 21, -Math.PI / 2, -Math.PI / 2 + (this.resetArm / 2.5) * Math.PI * 2);
+        ctx.arc(x, y, 24, -Math.PI / 2, -Math.PI / 2 + (this.resetArm / 2.5) * Math.PI * 2);
         ctx.stroke();
       }
     }
-    if (this.canZoom) {
-      // quatre coins : voir tout le diorama, ou revenir de près
-      const [x, y] = this.ui.view, o = this.overview ? 3.5 : 8.5;
-      disc(ctx, x, y, 18, this.overview ? 'rgba(255,214,130,0.3)' : 'rgba(255,255,255,0.1)');
-      ctx.strokeStyle = 'rgba(255,244,215,0.75)';
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-        ctx.moveTo(x + sx * o, y + sy * (o === 8.5 ? 4 : 8));
-        ctx.lineTo(x + sx * o, y + sy * o);
-        ctx.lineTo(x + sx * (o === 8.5 ? 4 : 8), y + sy * o);
-      }
-      ctx.stroke();
-    }
+    if (this.canZoom) uiButton(ctx, this.ui.view[0], this.ui.view[1], this.overview ? 'shrink' : 'expand', { active: this.overview });
     if (this.tutorial && this.hint && !this.done) {
       // le tout premier diorama : une main montre quoi toucher, d'abord le bon personnage, puis la case
       if (this.hint.who !== this.sel) {

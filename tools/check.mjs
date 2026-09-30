@@ -44,7 +44,8 @@ for (const [ci, ch] of CHAPTERS.entries()) {
     }
     const flag = !sol || dead || widths.size > 1 || hidden.length;
     if (flag) bad++;
-    console.log(`${flag ? '✗' : '✓'} ${ch.id} ${li + 1} : ${sol ? sol.length + ' pas' : 'SANS SOLUTION'}, ${seen.size} états, ${dead} impasses${widths.size > 1 ? ', LIGNES INÉGALES' : ''}${hidden.length ? ', CACHÉ PAR LE MONUMENT : ' + hidden : ''}\n    ${text}`);
+    const gestes = text === '—' ? 0 : text.split('  ').length;
+    console.log(`${flag ? '✗' : '✓'} ${ch.id} ${li + 1} : ${gestes} gestes, ${sol ? sol.length + ' pas' : 'SANS SOLUTION'}, ${seen.size} états, ${dead} impasses${widths.size > 1 ? ', LIGNES INÉGALES' : ''}${hidden.length ? ', CACHÉ PAR LE MONUMENT : ' + hidden : ''}\n    ${text}`);
   }
 }
 process.exit(bad ? 1 : 0);

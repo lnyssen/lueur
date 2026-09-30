@@ -7,8 +7,8 @@ const LIT = { scale: [0, 2, 4, 7, 9], chords: [[0, 4, 7], [9, 12, 16], [5, 9, 12
 const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 
 export class Sound {
-  constructor(muted) {
-    this.muted = muted;
+  constructor(opts) {
+    this.vol = { music: opts.music, sfx: opts.sfx };
     this.ctx = null;
     this.root = ROOTS[0];
     this.mode = DARK;
@@ -26,8 +26,15 @@ export class Sound {
     if (!AC) return;
     const ctx = this.ctx = new AC();
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.9;
+    this.master.gain.value = 0.9;
     this.master.connect(ctx.destination);
+    // deux volumes séparés : la musique d'un côté, les bruitages de l'autre
+    this.musicBus = ctx.createGain();
+    this.fxBus = ctx.createGain();
+    this.musicBus.gain.value = this.vol.music;
+    this.fxBus.gain.value = this.vol.sfx;
+    this.musicBus.connect(this.master);
+    this.fxBus.connect(this.master);
     // un écho feutré en guise de réverbération
     const delay = ctx.createDelay(1), fb = ctx.createGain(), damp = ctx.createBiquadFilter();
     delay.delayTime.value = 0.37;
@@ -44,8 +51,7 @@ export class Sound {
     this.padGain = ctx.createGain();
     this.padGain.gain.value = 0;
     this.padGain.gain.setTargetAtTime(0.05, ctx.currentTime, 2.5);
-    this.padFilter.connect(this.padGain).connect(this.master);
-    this.padGain.connect(this.echo);
+    this.padFilter.connect(this.padGain).connect(this.musicBus);
     this.pad = [0, 1, 2].map(i => {
       const o = ctx.createOscillator();
       o.type = i === 0 ? 'triangle' : 'sine';
@@ -64,9 +70,11 @@ export class Sound {
     });
   }
 
-  setMuted(m) {
-    this.muted = m;
-    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.05);
+  setVolumes(music, sfx) {
+    this.vol = { music, sfx };
+    if (!this.ctx) return;
+    this.musicBus.gain.setTargetAtTime(music, this.ctx.currentTime, 0.05);
+    this.fxBus.gain.setTargetAtTime(sfx, this.ctx.currentTime, 0.05);
   }
 
   // Le ton du chapitre, et l'humeur : éteint (mineur, feutré) ou rallumé (majeur, clair).
@@ -96,13 +104,13 @@ export class Sound {
         this.walk = Math.max(0, Math.min(9, this.walk + Math.round((Math.random() - 0.5) * 4)));
         const sc = this.mode.scale;
         const note = this.root + 12 + sc[this.walk % 5] + 12 * Math.floor(this.walk / 5);
-        this.bell(hz(note), this.next, 1.8, 0.05);
+        this.bell(hz(note), this.next, 1.8, 0.05, 'sine', this.musicBus);
       }
       this.next += 0.62;
     }
   }
 
-  bell(f, t, dur, vol, type = 'sine') {
+  bell(f, t, dur, vol, type = 'sine', bus = this.fxBus) {
     const ctx = this.ctx;
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = type;
@@ -111,8 +119,10 @@ export class Sound {
     g.gain.linearRampToValueAtTime(vol, t + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0004, t + dur);
     o.connect(g);
-    g.connect(this.master);
-    g.connect(this.echo);
+    g.connect(bus);
+    const send = ctx.createGain();
+    send.gain.value = bus.gain.value;
+    g.connect(send).connect(this.echo);
     o.start(t);
     o.stop(t + dur + 0.05);
     return o;
@@ -131,7 +141,7 @@ export class Sound {
     bp.frequency.exponentialRampToValueAtTime(f1, t + dur);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0004, t + dur);
-    src.connect(bp).connect(g).connect(this.master);
+    src.connect(bp).connect(g).connect(this.fxBus);
     src.start(t);
   }
 
@@ -143,7 +153,7 @@ export class Sound {
 
   play(name) {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running' || this.muted) return;
+    if (!ctx || ctx.state !== 'running' || !this.vol.sfx) return;
     const t = ctx.currentTime;
     const maj = i => hz(this.root + 24 + [0, 4, 7, 12, 16, 19, 24][i]);
     switch (name) {

@@ -21,6 +21,53 @@
     <h1>Lueur</h1>
     <p>chapitre 1 · le marais</p>
   </div>
+  <button id="gear" type="button" aria-label="Réglages">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+  </button>
+  <div id="settings" hidden>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <h2 id="settings-title">Réglages</h2>
+
+      <label class="row" for="opt-music">Musique
+        <input id="opt-music" type="range" min="0" max="100" step="5">
+      </label>
+      <label class="row" for="opt-sfx">Bruitages
+        <input id="opt-sfx" type="range" min="0" max="100" step="5">
+      </label>
+
+      <div class="group" role="group" aria-labelledby="lab-hints">
+        <span id="lab-hints">Indices du renard</span>
+        <div class="seg">
+          <button type="button" data-opt="hints" data-val="auto">Tout seul</button>
+          <button type="button" data-opt="hints" data-val="ask">Si je demande</button>
+          <button type="button" data-opt="hints" data-val="never">Jamais</button>
+        </div>
+      </div>
+
+      <div class="group" role="group" aria-labelledby="lab-zoom">
+        <span id="lab-zoom">Vue des énigmes</span>
+        <div class="seg">
+          <button type="button" data-opt="zoom" data-val="auto">Auto</button>
+          <button type="button" data-opt="zoom" data-val="near">De près</button>
+          <button type="button" data-opt="zoom" data-val="far">En entier</button>
+        </div>
+      </div>
+
+      <label class="row check" for="opt-calm">Moins d’animations
+        <input id="opt-calm" type="checkbox">
+      </label>
+
+      <div class="group" role="group" aria-labelledby="lab-chapters">
+        <span id="lab-chapters">Rejouer une région</span>
+        <div id="opt-chapters" class="chapters"></div>
+      </div>
+
+      <div class="actions">
+        <button id="opt-restart" type="button" class="quiet">Recommencer l’aventure</button>
+        <button id="opt-close" type="button" class="primary">Fermer</button>
+      </div>
+    </div>
+  </div>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

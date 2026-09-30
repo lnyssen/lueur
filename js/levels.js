@@ -18,6 +18,15 @@ export const CHAPTERS = [
         '.F#.....',
         '.##r##L.',
       ] },
+      // rester sur une dalle levée la garde levée : la fille attend dessus pendant que le renard change de dalle
+      { bridge: 'h', map: [
+        '....#poo...',
+        '.#W....o...',
+        '.G#.P..o...',
+        '.F#....q...',
+        '.##....oo..',
+        '.##r##sr#L.',
+      ] },
       { bridge: 'h', map: [
         '....#L.#q.',
         '....s.....',
@@ -47,6 +56,14 @@ export const CHAPTERS = [
         '..b#p.q...',
       ] },
       { bridge: 'h', map: [
+        '....ap......',
+        '.#W.........',
+        '.G#.P.##rsL.',
+        '.F#.........',
+        '............',
+        '......bq....',
+      ] },
+      { bridge: 'h', map: [
         '....#L.a..',
         '....s.....',
         '.G#r#W.P..',
@@ -71,6 +88,15 @@ export const CHAPTERS = [
         '.G#t#u#v#L',
         '.F#.......',
         '..oot.....',
+      ] },
+      // l'escalier : le renard saute d'une bascule à l'autre, la fille avance d'une dalle à chaque fois
+      { map: [
+        '....otto...',
+        '.G#oo..o...',
+        '.F#....o...',
+        '.##....o...',
+        '.##uvuv#L..',
+        '.##oooo....',
       ] },
       { bridge: 'h', map: [
         '....#t....',
@@ -97,6 +123,16 @@ export const CHAPTERS = [
         '.o..#.....',
         '.op.#k#L..',
       ] },
+      // les rôles s'inversent : la fille tourne les miroirs, le renard avance sur les dalles de lumière
+      { beam: [1, 0], map: [
+        '.........K.',
+        '.GY........',
+        '.F#.E....N.',
+        '.#.........',
+        '.#okjkj#q..',
+        '.s.........',
+        '.#L........',
+      ] },
       { beam: [1, 0], map: [
         '........K.',
         '.G#u#Y....',
@@ -122,6 +158,15 @@ export const CHAPTERS = [
         '.G#.P.#Y.E',
         '.F#.......',
         '.##rk##LKN',
+      ] },
+      { beam: [1, 0], map: [
+        '..........K',
+        '.GY........',
+        '.F#..E....N',
+        '.#.........',
+        '.#okjtt....',
+        '.#.........',
+        '.#uvu#L....',
       ] },
       { bridge: 'h', beam: [1, 0], map: [
         '.......a...',

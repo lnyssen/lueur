@@ -9,12 +9,12 @@
 //   a  b  les deux bouts d'un terrier (renard seulement)
 //   t  bascule : à chaque passage, les dalles u descendent et les v montent (ou l'inverse)
 //   E  source du rayon  M N  miroirs         Y  roue des miroirs
-//   K  cristal : éclairé par le rayon, il lève les dalles k
+//   K  cristal : éclairé par le rayon, il lève les dalles k et baisse les dalles j
 //
 // Une dalle levée reste levée tant que quelqu'un se tient dessus.
 
 const SOLID = 'EMNK';
-const RAISED = 'rskuv';
+const RAISED = 'rskjuv';
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 export const cell = (L, x, y) => (L.map[y] && L.map[y][x]) || null;
@@ -71,6 +71,7 @@ export function isUp(L, s, c, x, y) {
   if (c === 'r') return pressed(L, s, 'p');
   if (c === 's') return pressed(L, s, 'q');
   if (c === 'k') return beam(L, s).lit;
+  if (c === 'j') return !beam(L, s).lit;
   if (c === 'u') return !s.flip;
   return s.flip;
 }

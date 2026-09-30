@@ -4,7 +4,7 @@ import { Camp } from './camp.js';
 import { Diorama } from './diorama.js';
 import { Sound } from './audio.js';
 import { CHAPTERS } from './levels.js';
-import { disc, poly } from './draw.js';
+import { initSettings } from './settings.js';
 
 // Paramètres de test : ?reset, ?chapter=0..4, ?scene=road|camp|diorama, ?stage=0..2, ?lit
 const q = new URLSearchParams(location.search);
@@ -20,7 +20,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const view = { w: 0, h: 0, dpr: 1 };
 const fade = { a: 1, to: null };
-const sound = new Sound(state.muted);
+const sound = new Sound(state.opts);
 const title = document.getElementById('title');
 
 const game = {
@@ -64,19 +64,12 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-const muteAt = () => [view.w - 36, 36];
+const settings = initSettings(game, sound);
 
 canvas.addEventListener('pointerdown', e => {
   hideTitle();
   sound.start();
   canvas.setPointerCapture(e.pointerId);
-  const [mx, my] = muteAt();
-  if (Math.hypot(e.clientX - mx, e.clientY - my) < 24) {
-    state.muted = !state.muted;
-    sound.setMuted(state.muted);
-    save(state);
-    return;
-  }
   scene.pointer('down', e.clientX, e.clientY);
 });
 canvas.addEventListener('pointermove', e => scene.pointer('move', e.clientX, e.clientY));
@@ -86,40 +79,14 @@ window.addEventListener('keydown', e => {
   hideTitle();
   sound.start();
   if (e.key === 'Tab') e.preventDefault();
-  if (e.key === 'm' && !e.repeat) {
-    state.muted = !state.muted;
-    sound.setMuted(state.muted);
-    save(state);
-  }
+  if (settings.isOpen()) return;
   if (!e.repeat) scene.key?.('down', e.key);
 });
 window.addEventListener('keyup', e => scene.key?.('up', e.key));
 
-function drawMute() {
-  const [x, y] = muteAt();
-  disc(ctx, x, y, 18, 'rgba(255,255,255,0.1)');
-  const col = 'rgba(255,244,215,0.75)';
-  poly(ctx, [x - 8, y - 3, x - 4, y - 3, x + 1, y - 8, x + 1, y + 8, x - 4, y + 3, x - 8, y + 3], col);
-  ctx.strokeStyle = col;
-  ctx.lineWidth = 1.6;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  if (state.muted) {
-    ctx.moveTo(x + 4, y - 4);
-    ctx.lineTo(x + 10, y + 4);
-    ctx.moveTo(x + 10, y - 4);
-    ctx.lineTo(x + 4, y + 4);
-  } else {
-    ctx.arc(x + 1, y, 6, -0.8, 0.8);
-    ctx.moveTo(x + 1 + Math.cos(-0.8) * 10, y + Math.sin(-0.8) * 10);
-    ctx.arc(x + 1, y, 10, -0.8, 0.8);
-  }
-  ctx.stroke();
-}
-
 function tick(dt) {
   if (fade.to) {
-    fade.a += dt / 0.55;
+    fade.a += dt / (state.opts.calm ? 0.2 : 0.55);
     if (fade.a >= 1) {
       fade.a = 1;
       state.scene = fade.to;
@@ -128,14 +95,13 @@ function tick(dt) {
       fade.to = null;
     }
   } else if (fade.a > 0) {
-    fade.a = Math.max(0, fade.a - dt / 0.8);
+    fade.a = Math.max(0, fade.a - dt / (state.opts.calm ? 0.25 : 0.8));
   }
 
   scene.update(dt);
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
   scene.draw(ctx);
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
-  drawMute();
   if (fade.a > 0) {
     ctx.fillStyle = `rgba(24,22,48,${fade.a})`;
     ctx.fillRect(0, 0, view.w, view.h);

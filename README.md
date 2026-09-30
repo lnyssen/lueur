@@ -52,7 +52,7 @@ Chaque chapitre ajoute une idée au diorama, et garde celles d'avant.
 
 ## État
 
-Les cinq chapitres sont jouables de bout en bout : sentier, camp, trois dioramas, lumière rallumée,
+Les cinq chapitres sont jouables de bout en bout : sentier, camp, quatre dioramas, lumière rallumée,
 constellation. Musique et bruitages générés (Web Audio), installable comme appli (manifest +
 service worker, jouable hors ligne).
 
@@ -66,12 +66,20 @@ Dans les dioramas :
   pointillé ;
 - au tout premier diorama, une main montre quoi toucher.
 
+La troisième étape de chaque chapitre est la plus corsée (7 à 11 gestes) ; la quatrième, plus
+courte, porte le monument à rallumer.
+
+Réglages (bouton en haut à droite) : volume de la musique et des bruitages, indices (tout seul,
+si je demande, jamais), vue des énigmes (auto, de près, en entier), moins d'animations, rejouer
+une région déjà rallumée, recommencer l'aventure.
+
 ## Fichiers
 
 - `js/rules.js` : les règles des dioramas et le solveur (sert aussi aux indices).
-- `js/levels.js` : les quinze cartes, en texte.
+- `js/levels.js` : les vingt cartes, en texte.
 - `js/diorama.js`, `js/road.js`, `js/camp.js` : les trois scènes.
 - `js/audio.js` : musique et bruitages.
+- `js/settings.js`, `js/icons.js` : l'écran de réglages et les icônes de l'interface.
 - `tools/check.mjs` : vérifie chaque carte (solution, aucune impasse, rien de caché derrière le
   monument). À relancer après toute modification d'une carte : `node tools/check.mjs`.
 - `tools/icons.py` : régénère les icônes de l'appli.
@@ -82,6 +90,6 @@ Dans les dioramas :
 python3 -m http.server 5180 --directory .
 ```
 
-Paramètres de test : `?reset`, `?chapter=0..4`, `?scene=road|camp|diorama`, `?stage=0..2`, `?lit`.
+Paramètres de test : `?reset`, `?chapter=0..4`, `?scene=road|camp|diorama`, `?stage=0..3`, `?lit`.
 Touches : flèches, espace/Tab (changer de personnage), Entrée (tourner la roue), `h` (indice),
-`r` (recommencer le diorama), `m` (son).
+`r` (recommencer le diorama).
