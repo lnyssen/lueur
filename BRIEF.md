@@ -58,11 +58,13 @@ Chaque chapitre ajoute une idée au diorama, et garde celles d'avant.
 | Marais | le renard saute et fait tomber une planche | grenouille, héron | une caresse |
 | Forêt | pousser trois fois un tronc mort | chouette, cerf | lancer un bâton |
 | Falaises | passer les pierres à marée basse | mouettes, crabe | cache-cache |
-| Montagne | « 1, 2, 3, soleil » : s'arrêter quand le renard se couche, avant la rafale | marmotte, bouquetin | relier des étoiles |
-| Ciel | monter sur le nuage qui fait la navette | baleine du ciel, oiseaux-étoiles | une caresse |
+| Montagne | « 1, 2, 3, soleil » : s'arrêter quand le renard se couche, avant la rafale | marmotte, bouquetin | mémoire : retoucher les étoiles dans l'ordre |
+| Ciel | monter sur le nuage qui fait la navette | baleine du ciel, oiseaux-étoiles | le renard rapporte une étoile en cadeau |
 
 Le **carnet** (bouton en haut à gauche du camp) garde les trouvailles et les animaux rencontrés.
 Montrer au renard les trois trouvailles d'une région ajoute une étoile à sa constellation.
+Carnet complet (15 trouvailles, 10 animaux) : une sixième constellation apparaît, la fille et le
+renard, au camp et dans la scène de fin.
 
 La **fin** : après le ciel, le chemin du retour traverse les cinq régions rallumées, jusqu'à la
 maison.
@@ -101,6 +103,10 @@ une région déjà rallumée, recommencer l'aventure.
 - `tools/check.mjs` : vérifie chaque carte (solution, aucune impasse, rien de caché derrière le
   monument). À relancer après toute modification d'une carte : `node tools/check.mjs`.
 - `tools/icons.py` : régénère les icônes de l'appli.
+
+## Mise en ligne
+
+Le dépôt GitHub est relié à Vercel : chaque `git push` sur `main` met le jeu en ligne.
 
 ## Lancer
 

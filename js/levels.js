@@ -83,11 +83,11 @@ export const CHAPTERS = [
         '.F#.o....',
         '..oto....',
       ] },
+      // elle bascule elle-même en passant ; l'astuce : le renard peut tenir une dalle levée pour elle
       { map: [
-        '..........',
-        '.G#t#u#v#L',
-        '.F#.......',
-        '..oot.....',
+        '.G#rtvuv#L',
+        '.F#.ooooo.',
+        '..opot....',
       ] },
       // l'escalier : le renard saute d'une bascule à l'autre, la fille avance d'une dalle à chaque fois
       { map: [
@@ -116,12 +116,14 @@ export const CHAPTERS = [
         '..#......',
         '..#k#L...',
       ] },
+      // deux roues des miroirs : allumer pour passer, éteindre plus loin pour repasser
       { beam: [1, 0], map: [
         '.......K..',
-        '.G#r#Y....',
-        '.F#o#E.N..',
-        '.o..#.....',
-        '.op.#k#L..',
+        '.GY.......',
+        '.F#.E..N..',
+        '.#........',
+        '.#kY#jr#L.',
+        '.oooooop..',
       ] },
       // les rôles s'inversent : la fille tourne les miroirs, le renard avance sur les dalles de lumière
       { beam: [1, 0], map: [

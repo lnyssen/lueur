@@ -82,9 +82,12 @@ export function drawGirl(ctx, x, y, s, facing, t, walking, opts = {}) {
   const sw = walking ? Math.sin(t * 11) : 0;
   const bob = walking ? Math.abs(Math.sin(t * 11)) * 1.5 : Math.sin(t * 2) * 0.6;
   if (opts.sit) {
+    // assise sur une pierre : cuisses à l'horizontale, jambes qui descendent jusqu'au sol
     ctx.fillStyle = INK;
-    ctx.fillRect(2, -5, 15, 4.5);
-    ctx.translate(0, 7);
+    ctx.fillRect(0, -12, 13, 4.5);
+    ctx.fillRect(10, -9, 4, 9);
+    ctx.fillRect(10, -1.5, 6, 1.5);
+    ctx.translate(0, 2);
   } else {
     ctx.fillStyle = INK;
     ctx.fillRect(-5 + sw * 3, -12, 4, 12);

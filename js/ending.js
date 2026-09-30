@@ -1,6 +1,6 @@
 // La fin : le chemin du retour à travers les cinq régions rallumées, puis la maison.
 import { Road } from './road.js';
-import { SKY } from './camp.js';
+import { SKY, SKY_SECRET, complete } from './camp.js';
 import { CHAPTERS } from './levels.js';
 import { uiButton } from './icons.js';
 import { rng, poly, disc, glow, drawGirl, drawFox } from './draw.js';
@@ -85,7 +85,7 @@ export class Ending {
 
     // les cinq constellations, toutes allumées
     const k = Math.min(1, VW / 560) * 0.85;
-    SKY.forEach(({ stars, lines, at }, i) => {
+    (complete(this.g.state) ? [...SKY, SKY_SECRET] : SKY).forEach(({ stars, lines, at }, i) => {
       const P = stars.map(([x, y]) => [cx + at[0] * VW + x * k, G * (at[1] * 0.8 + 0.2) + y * k]);
       ctx.strokeStyle = 'rgba(255,236,190,0.7)';
       ctx.lineWidth = 1.2;

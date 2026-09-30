@@ -41,6 +41,20 @@ export const SKY = [
   },
 ];
 
+// La surprise du carnet complet : une sixième constellation, la fille et le renard.
+export const SKY_SECRET = {
+  at: [0, 0.1],
+  stars: [[-46, -40], [-40, -26], [-56, 12], [-26, 12], [16, -8], [26, 4], [52, 4], [74, -10], [30, 26], [54, 26]],
+  lines: [[0, 1], [1, 2], [1, 3], [2, 3], [4, 5], [5, 6], [6, 7], [5, 8], [6, 9]],
+};
+
+// Tout trouvé, tout vu ?
+export function complete(st) {
+  const finds = CHAPTERS.flatMap(ch => findsOf(ch.id));
+  const animals = CHAPTERS.flatMap(ch => CRITTERS[ch.id].map(([k]) => k));
+  return finds.every(id => st.finds[id]) && animals.every(k => st.seen?.[k]);
+}
+
 // Couleurs du ciel et du sol, nuit d'avant puis nuit d'après.
 const NIGHT = [
   { sky: ['#141230', '#4a4273'], lit: ['#12263f', '#3f6f7c'], hill: ['#262346', '#1d3f4a'], tree: ['#1d1b3a', '#173540'], ground: ['#2f2c55', '#234c54'], edge: ['#3e3a6c', '#2f636a'] },
@@ -53,8 +67,10 @@ const NIGHT = [
 // Ce qu'on fait au camp de chaque région, dans l'ordre.
 //   feed   partager le goûter        pet    une caresse
 //   fetch  lancer un bâton           hide   cache-cache derrière les buissons
-//   stars  relier des étoiles
-const PLAN = [['feed', 'pet'], ['feed', 'fetch'], ['feed', 'hide'], ['feed', 'stars'], ['feed', 'pet']];
+//   stars  jeu de mémoire : retoucher les étoiles dans l'ordre où elles se sont allumées
+//   gift   le renard part chercher un cadeau pour la fille
+const PLAN = [['feed', 'pet'], ['feed', 'fetch'], ['feed', 'hide'], ['feed', 'stars'], ['feed', 'gift']];
+const SEQ = [3, 4];     // longueur des suites d'étoiles, manche après manche
 const ROUNDS = 2;
 
 export class Camp {
@@ -77,7 +93,9 @@ export class Camp {
     this.hearts = [];
     this.shake = [0, 0, 0];
     this.spot = 0;
-    this.picked = [false, false, false, false];
+    this.seq = [];
+    this.got = 0;
+    this.flash = [0, 0, 0, 0, 0];
     this.stickX = null;
     this.gift = null;
     this.carnet = false;
@@ -92,6 +110,10 @@ export class Camp {
     this.pines = [];
     for (let i = 0; i < 9; i++) this.pines.push([r(), 70 + r() * 90]);
     this.shooting = [];
+    // carnet complet : la fille et le renard apparaissent dans le ciel (tracés la première fois)
+    this.secret = complete(st);
+    this.secretNew = this.secret && !st.secretSeen;
+    if (this.secretNew) { st.secretSeen = true; game.save(); }
   }
 
   layout() {
@@ -108,7 +130,7 @@ export class Camp {
     this.back = [46, this.VH - 46];
     this.book = [38 / this.s, 38 / this.s];
     this.bushes = [this.cx - 150, this.cx + 104, this.cx + 162].map(x => Math.max(40, Math.min(this.VW - 46, x)));
-    this.dots = [[-70, 8], [-24, -18], [26, -4], [72, -22]].map(([x, y]) => [this.cx + x, this.G * 0.66 + y]);
+    this.dots = [[-86, 10], [-44, -20], [0, 4], [44, -24], [88, 2]].map(([x, y]) => [this.cx + x, this.G * 0.66 + y]);
   }
 
   // les trouvailles de cette région qu'on n'a pas encore montrées au renard
@@ -166,13 +188,30 @@ export class Camp {
       const i = this.bushes.findIndex(bx => near(bx, G - 18, 38));
       if (i === this.spot) { p.phase = 'found'; p.t = 0; this.g.sfx('yip'); }
       else if (i >= 0) { this.shake[i] = 1; this.g.sfx('pad'); }
-    } else if (this.act === 'stars') {
-      const i = this.dots.findIndex(([dx, dy]) => near(dx, dy, 30));
-      if (i >= 0 && !this.picked[i]) {
-        this.picked[i] = true;
-        this.g.sfx('pickup');
-        if (this.picked.every(Boolean)) { p.phase = 'joy'; p.t = 0; this.burst(); }
+    } else if (this.act === 'stars' && p.phase === 'input') {
+      const i = this.dots.findIndex(([dx, dy]) => near(dx, dy, 28));
+      if (i < 0) return;
+      this.flash[i] = 1;
+      if (i === this.seq[this.got]) {
+        this.g.sfx('tap');
+        this.got++;
+        if (this.got === this.seq.length) {
+          p.round++;
+          p.phase = p.round >= SEQ.length ? 'joy' : 'next';
+          p.t = 0;
+          if (p.phase === 'joy') this.burst();
+          else this.g.sfx('light');
+        }
+      } else {
+        // pas celle-là : les étoiles se rejouent, sans rien perdre
+        this.g.sfx('pad');
+        p.phase = 'show';
+        p.t = -0.6;
+        this.got = 0;
       }
+    } else if (this.act === 'gift') {
+      if (p.phase === 'wait' && near(this.foxX, G - 22, 46)) { p.phase = 'away'; p.t = 0; this.g.sfx('yip'); }
+      else if (p.phase === 'given' && near(this.girlX + 30, G - 10, 30)) { p.phase = 'rise'; p.t = 0; this.g.sfx('relight'); }
     }
   }
 
@@ -189,7 +228,8 @@ export class Camp {
     else if (this.act === 'pet') tap(this.foxX, G - 22);
     else if (this.act === 'fetch') tap(this.stickAt(), G - 8);
     else if (this.act === 'hide') tap(this.bushes[this.spot], G - 18);
-    else if (this.act === 'stars' && this.picked.includes(false)) tap(...this.dots[this.picked.indexOf(false)]);
+    else if (this.act === 'stars' && this.p.phase === 'input') tap(...this.dots[this.seq[this.got]]);
+    else if (this.act === 'gift') tap(...(this.p.phase === 'given' ? [this.girlX + 30, G - 10] : [this.foxX, G - 22]));
   }
 
   // où est le bâton : près de la fille au début, puis là où le renard l'a posé
@@ -275,8 +315,49 @@ export class Camp {
         if (p.t > 1.4) this.nextAct();
       }
     } else if (this.act === 'stars') {
+      // le renard lève le museau : les étoiles s'allument une à une, puis c'est à elle
       f.mode = 'sit';
-      if (p.phase === 'joy' && p.t > 2.6) this.nextAct();
+      this.flash = this.flash.map(v => Math.max(0, v - dt * 2));
+      if (p.phase === 'wait') {
+        this.seq = [];
+        while (this.seq.length < SEQ[p.round]) {
+          const n = Math.floor(Math.random() * this.dots.length);
+          if (n !== this.seq[this.seq.length - 1]) this.seq.push(n);
+        }
+        p.phase = 'show';
+        p.t = -0.8;
+        this.got = 0;
+      } else if (p.phase === 'show') {
+        const i = Math.floor(p.t / 0.7);
+        if (p.t >= 0 && i < this.seq.length && this.flash[this.seq[i]] < 0.05 && p.t - i * 0.7 < 0.1) {
+          this.flash[this.seq[i]] = 1;
+          this.g.sfx('pickup');
+        }
+        if (p.t > this.seq.length * 0.7 + 0.2) { p.phase = 'input'; p.t = 0; }
+      } else if (p.phase === 'next' && p.t > 1.2) {
+        p.phase = 'wait';
+      } else if (p.phase === 'joy' && p.t > 2.6) {
+        this.nextAct();
+      }
+    } else if (this.act === 'gift') {
+      // il file, revient avec une étoile dans la gueule et la pose aux pieds de la fille
+      if (p.phase === 'away') {
+        f.dx += 300 * dt; f.face = 1; f.mode = 'walk';
+        if (this.foxX + f.dx > this.VW + 60) { p.phase = 'back'; p.t = 0; }
+      } else if (p.phase === 'back') {
+        if (p.t > 0.8) { f.dx = Math.max(-60, f.dx - 200 * dt); f.face = -1; f.mode = 'walk'; }
+        if (f.dx <= -60) { p.phase = 'given'; p.t = 0; this.g.sfx('heart'); }
+      } else if (p.phase === 'given') {
+        f.mode = 'happy';
+      } else if (p.phase === 'rise') {
+        f.dx = Math.min(0, f.dx + 60 * dt); f.mode = 'sit';
+        if (p.t > 2.4) { this.burst(); p.phase = 'joy'; p.t = 0; }
+      } else if (p.phase === 'joy') {
+        f.mode = 'happy';
+        if (p.t > 1.4) this.nextAct();
+      } else {
+        f.mode = 'sit';
+      }
     } else if (!st.lit) {
       // les jeux sont finis : on peut encore montrer ses trouvailles, puis le renard s'endort
       if (this.gift) {
@@ -311,13 +392,13 @@ export class Camp {
   }
 
   constellation(ctx, i, state) {
-    const { stars, lines, at } = SKY[i];
-    const k = Math.min(1, this.VW / 560) * 0.85;
-    const ox = this.cx + at[0] * this.VW, oy = Math.max(60, this.G * at[1]);
+    const { stars, lines, at } = i === 'secret' ? SKY_SECRET : SKY[i];
+    const k = Math.min(1, this.VW / 560) * (i === 'secret' ? 1.15 : 0.85);
+    const ox = this.cx + at[0] * this.VW, oy = Math.max(i === 'secret' ? 74 : 60, this.G * at[1]);
     const P = stars.map(([x, y]) => [ox + x * k, oy + y * k]);
     if (state) {
       // la plus récente se trace trait par trait
-      const prog = state === 'new' ? Math.min(lines.length, Math.max(0, this.t - 0.8) * 1.6) : lines.length;
+      const prog = state === 'new' ? Math.min(lines.length, Math.max(0, this.t - (i === 'secret' ? 3 : 0.8)) * 1.6) : lines.length;
       ctx.strokeStyle = 'rgba(255,236,190,0.7)';
       ctx.lineWidth = 1.2;
       for (let j = 0; j < lines.length; j++) {
@@ -332,13 +413,13 @@ export class Camp {
     }
     P.forEach(([x, y], j) => {
       if (state) {
-        glow(ctx, x, y, 11, 0.5 + 0.2 * Math.sin(this.t * 2 + j + i));
+        glow(ctx, x, y, 11, 0.5 + 0.2 * Math.sin(this.t * 2 + j + (i === 'secret' ? 7 : i)));
         disc(ctx, x, y, 2.2, '#fff6d8');
       } else {
         disc(ctx, x, y, 1.5, 'rgba(235,232,255,0.28)');
       }
     });
-    if (state && this.g.state.stars[i]) {
+    if (state && i !== 'secret' && this.g.state.stars[i]) {
       // l'étoile des trois trouvailles : plus grosse, avec ses rayons
       const [x, y] = P[0], r = 9 + Math.sin(this.t * 2.4) * 1.5;
       glow(ctx, x, y, 26, 0.7);
@@ -365,6 +446,11 @@ export class Camp {
     ctx.beginPath();
     ctx.roundRect(x0, y0, W, H, 16);
     ctx.fill();
+    if (complete(st)) {
+      ctx.strokeStyle = '#f0a63c';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
     ctx.fillStyle = 'rgba(42,39,80,0.12)';
     ctx.fillRect(x0 + W / 2 - 0.5, y0 + 14, 1, H - 28);
     const tint = ['#62c5b8', '#6fbf7a', '#58a6cb', '#b8a6d8', '#f2a78f'];
@@ -417,24 +503,41 @@ export class Camp {
       const earned = i < Math.max(this.ch, st.best | 0) || (i === this.ch && st.lit);
       this.constellation(ctx, i, !earned ? null : i === this.ch && st.lit ? 'new' : 'old');
     }
+    if (this.secret) this.constellation(ctx, 'secret', this.secretNew ? 'new' : 'old');
 
-    // le jeu des étoiles : quatre étoiles basses à toucher, qui se relient
+    // le jeu des étoiles : cinq étoiles basses ; celles de la suite s'allument, puis elle les retouche
     if (this.act === 'stars') {
-      const done = this.picked.every(Boolean);
-      ctx.strokeStyle = 'rgba(255,236,190,0.8)';
-      ctx.lineWidth = 1.4;
-      for (let i = 0; i < 3; i++) {
-        if (!this.picked[i] || !this.picked[i + 1]) continue;
+      const done = p.phase === 'joy';
+      if (done) {
+        ctx.strokeStyle = 'rgba(255,236,190,0.8)';
+        ctx.lineWidth = 1.4;
         ctx.beginPath();
-        ctx.moveTo(...this.dots[i]);
-        ctx.lineTo(...this.dots[i + 1]);
+        this.seq.forEach((n, i) => (i ? ctx.lineTo(...this.dots[n]) : ctx.moveTo(...this.dots[n])));
         ctx.stroke();
       }
       this.dots.forEach(([x, y], i) => {
-        if (this.picked[i]) { glow(ctx, x, y, 16, 0.7); disc(ctx, x, y, 3, '#fff6d8'); }
-        else { disc(ctx, x, y, 2.4, '#fff6d8'); ring(ctx, x, y, t + i * 0.3, 12); }
+        const fl = this.flash[i], on = done && this.seq.includes(i);
+        if (fl || on) glow(ctx, x, y, 16 + fl * 18, 0.4 + fl * 0.5);
+        disc(ctx, x, y, 2.6 + fl * 2.5, '#fff6d8');
+        if (p.phase === 'input') {
+          ctx.strokeStyle = 'rgba(255,236,190,0.35)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(x, y, 12, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       });
-      if (done) glow(ctx, cx, G * 0.66 - 8, 120, 0.18);
+      // la suite déjà retrouvée, en petits points sous les étoiles
+      for (let i = 0; i < this.seq.length; i++) {
+        disc(ctx, cx + (i - (this.seq.length - 1) / 2) * 12, G * 0.66 + 34, 2.5, i < this.got ? '#ffd78a' : 'rgba(255,255,255,0.2)');
+      }
+    }
+
+    // le cadeau du renard monte au ciel
+    if (this.act === 'gift' && p.phase === 'rise') {
+      const k = Math.min(1, p.t / 2.2), gx = this.girlX + 30 + (cx - this.girlX - 30) * k, gy = G - 10 - k * (G * 0.55);
+      glow(ctx, gx, gy, 20 + k * 40, 0.7);
+      disc(ctx, gx, gy, 3 + k * 2, '#fff6d8');
     }
 
     // horizon
@@ -481,6 +584,7 @@ export class Camp {
     }
 
     // personnages
+    poly(ctx, [this.girlX - 14, G + 1, this.girlX - 11, G - 8, this.girlX + 8, G - 9, this.girlX + 12, G + 1], pick(N.hill));
     drawGirl(ctx, this.girlX, G, 1.15, 1, t, false, { sit: true });
     const shown = !(hiding && (p.phase === 'hidden' || (p.phase === 'away' && this.foxX + f.dx > VW + 40)));
     if (shown) drawFox(ctx, this.foxX + f.dx, G + f.y, 1.15, f.face, t, this.asleep ? 'sleep' : f.mode);
@@ -529,6 +633,12 @@ export class Camp {
     if (this.gift) {
       const k = this.gift.t;
       icon(ctx, this.gift.id, this.gift.x0 + (this.foxX - 26 - this.gift.x0) * k, G - 10 - Math.sin(Math.PI * k) * 60, 1.2);
+    }
+    if (this.act === 'gift') {
+      const star = (x, y) => { glow(ctx, x, y, 16, 0.7); icon(ctx, 'stardust', x, y, 1); };
+      if (p.phase === 'back' && p.t > 0.8) star(this.foxX + f.dx - 40, G - 24);
+      if (p.phase === 'given') { star(this.girlX + 30, G - 10); ring(ctx, this.girlX + 30, G - 10, t, 16); }
+      if (p.phase === 'wait') ring(ctx, this.foxX - 6, G - 44, t, 17);
     }
     for (const h of this.hearts) heart(ctx, h.x, h.y, 1.3, Math.min(1, h.life));
 
