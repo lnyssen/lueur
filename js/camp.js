@@ -1,8 +1,10 @@
-// Le camp : on partage à manger, on caresse le renard, il s'endort.
+// Le camp : on partage à manger, puis un jeu avec le renard, différent à chaque région.
+// On peut lui montrer les trouvailles du sentier ; le carnet garde tout ce qu'on a trouvé et vu.
 // Le ciel garde une constellation par région rallumée.
 import { rng, poly, disc, glow, ring, drawGirl, drawFox, icon, heart } from './draw.js';
+import { CRITTERS, portrait } from './critters.js';
 import { CHAPTERS } from './levels.js';
-import { foodOf } from './road.js';
+import { foodOf, findsOf } from './road.js';
 import { uiButton } from './icons.js';
 
 const pentagram = [0, 1, 2, 3, 4].map(i => {
@@ -11,7 +13,7 @@ const pentagram = [0, 1, 2, 3, 4].map(i => {
 });
 
 // Une constellation par chapitre : étoiles (x, y), traits entre indices, place dans le ciel (u, v).
-const SKY = [
+export const SKY = [
   { // le renard
     at: [-0.27, 0.46],
     stars: [[-72, 12], [-36, 0], [-6, -8], [24, -34], [32, -14], [54, -6], [22, 8], [18, 36], [-28, 34]],
@@ -48,6 +50,13 @@ const NIGHT = [
   { sky: ['#08081c', '#2a2660'], lit: ['#1c1440', '#c07a6a'], hill: ['#1c1a44', '#4a3060'], tree: ['#16143a', '#3a2650'], ground: ['#24215a', '#5a3a6a'], edge: ['#38347a', '#8a5a80'] },
 ];
 
+// Ce qu'on fait au camp de chaque région, dans l'ordre.
+//   feed   partager le goûter        pet    une caresse
+//   fetch  lancer un bâton           hide   cache-cache derrière les buissons
+//   stars  relier des étoiles
+const PLAN = [['feed', 'pet'], ['feed', 'fetch'], ['feed', 'hide'], ['feed', 'stars'], ['feed', 'pet']];
+const ROUNDS = 2;
+
 export class Camp {
   constructor(game) {
     this.g = game;
@@ -56,15 +65,25 @@ export class Camp {
     this.last = this.ch === CHAPTERS.length - 1;
     this.food = foodOf(CHAPTERS[this.ch].id);
     this.t = 0;
-    this.fed = false;
-    this.petted = false;
+    this.acts = st.lit ? [] : PLAN[this.ch].slice();
+    this.act = this.acts.shift() || null;
+    this.p = { phase: 'wait', t: 0, round: 0 };      // l'état du jeu en cours
+    this.fox = { dx: 0, y: 0, face: -1, mode: 'sit' };
     this.asleep = st.lit;
     this.doneT = 0;
     this.toss = null;
     this.eatT = 0;
     this.happyT = 0;
     this.hearts = [];
+    this.shake = [0, 0, 0];
+    this.spot = 0;
+    this.picked = [false, false, false, false];
+    this.gift = null;
+    this.carnet = false;
     this.chimed = false;
+    st.shown ||= {};
+    st.stars ||= {};
+    st.seen ||= {};
     game.mood(st.lit);
     const r = rng(21 + this.ch * 13);
     this.stars = [];
@@ -86,85 +105,198 @@ export class Camp {
     this.foodX = this.girlX - 34;
     this.next = [this.VW - 46, this.VH - 46];
     this.back = [46, this.VH - 46];
+    this.book = [38 / this.s, 38 / this.s];
+    this.bushes = [this.cx - 150, this.cx + 104, this.cx + 162].map(x => Math.max(40, Math.min(this.VW - 46, x)));
+    this.dots = [[-70, 8], [-24, -18], [26, -4], [72, -22]].map(([x, y]) => [this.cx + x, this.G * 0.66 + y]);
+  }
+
+  // les trouvailles de cette région qu'on n'a pas encore montrées au renard
+  gifts() {
+    const st = this.g.state;
+    return findsOf(CHAPTERS[this.ch].id).filter(id => st.finds[id] && !st.shown[id]);
   }
 
   pointer(type, sx, sy) {
     if (type !== 'down') return;
     this.layout();
     const st = this.g.state;
-    const x = sx / this.s, y = sy / this.s, G = this.G;
+    const x = sx / this.s, y = sy / this.s, G = this.G, p = this.p;
     const near = (px, py, r) => Math.hypot(x - px, y - py) < r;
+    if (this.carnet) { this.carnet = false; this.g.sfx('tap'); return; }
+    if (near(...this.book, 24 / this.s)) { this.carnet = true; this.g.sfx('tap'); return; }
     if (st.lit) {
       if (near(...this.back, 34)) this.g.go('road');
-      else if (!this.last && this.t > 3 && near(...this.next, 36)) {
-        // en route pour la région suivante
-        Object.assign(st, { chapter: this.ch + 1, x: 120, berries: false, bridge: false, stage: 0, lit: false });
+      else if (this.t > 3 && near(...this.next, 36)) {
         this.g.sfx('light');
-        this.g.go('road');
+        if (this.last) {
+          st.finished = true;
+          this.g.go('ending');
+        } else {
+          // en route pour la région suivante
+          Object.assign(st, { chapter: this.ch + 1, x: 120, berries: false, bridge: false, stage: 0, lit: false });
+          this.g.go('road');
+        }
       }
       return;
     }
-    if (this.asleep) {
-      if (this.doneT > 1.4 && near(...this.next, 36)) {
+    if (!this.act) {
+      if (this.doneT > 1 && near(...this.next, 36)) {
         st.stage = 0;
         this.g.go('diorama');
+        return;
+      }
+      // montrer une trouvaille au renard
+      const list = this.gifts();
+      const i = list.findIndex((id, k) => near(this.foodX + k * 30, G - 12, 20));
+      if (i >= 0 && !this.gift && !this.asleep) {
+        this.gift = { id: list[i], x0: this.foodX + i * 30, t: 0 };
+        st.shown[list[i]] = true;
+        this.g.sfx('tap');
       }
       return;
     }
-    if (!this.fed && !this.toss && near(this.foodX, G - 12, 34)) {
-      this.toss = { t: 0 };
-      this.g.sfx('tap');
-    } else if (!this.petted && near(this.foxX, G - 22, 46)) {
-      this.petted = true;
-      this.happyT = 1.6;
-      this.burst();
+    if (this.act === 'feed') {
+      if (p.phase === 'wait' && !this.toss && near(this.foodX, G - 12, 34)) { this.toss = { t: 0 }; this.g.sfx('tap'); }
+    } else if (this.act === 'pet') {
+      if (p.phase === 'wait' && near(this.foxX, G - 22, 46)) { p.phase = 'joy'; p.t = 0; this.happyT = 1.6; this.burst(); }
+    } else if (this.act === 'fetch') {
+      if (p.phase === 'wait' && near(this.girlX + 30, G - 8, 34)) { p.phase = 'fly'; p.t = 0; this.g.sfx('leap'); }
+    } else if (this.act === 'hide' && p.phase === 'hidden') {
+      const i = this.bushes.findIndex(bx => near(bx, G - 18, 38));
+      if (i === this.spot) { p.phase = 'found'; p.t = 0; this.g.sfx('yip'); }
+      else if (i >= 0) { this.shake[i] = 1; this.g.sfx('pad'); }
+    } else if (this.act === 'stars') {
+      const i = this.dots.findIndex(([dx, dy]) => near(dx, dy, 30));
+      if (i >= 0 && !this.picked[i]) {
+        this.picked[i] = true;
+        this.g.sfx('pickup');
+        if (this.picked.every(Boolean)) { p.phase = 'joy'; p.t = 0; this.burst(); }
+      }
     }
   }
 
   key(type, k) {
     if (type !== 'down') return;
     this.layout();
-    const tap = (px, py) => this.pointer('down', px * this.s, py * this.s);
+    const G = this.G, tap = (px, py) => this.pointer('down', px * this.s, py * this.s);
+    if (this.carnet) return tap(0, 0);
+    if (k === 'c') return tap(...this.book);
     if (k === 'ArrowLeft' && this.g.state.lit) return tap(...this.back);
     if (k !== ' ' && k !== 'Enter' && k !== 'ArrowRight') return;
-    if (this.asleep) tap(...this.next);
-    else if (!this.fed) tap(this.foodX, this.G - 12);
-    else tap(this.foxX, this.G - 22);
+    if (!this.act) tap(...this.next);
+    else if (this.act === 'feed') tap(this.foodX, G - 12);
+    else if (this.act === 'pet') tap(this.foxX, G - 22);
+    else if (this.act === 'fetch') tap(this.girlX + 30, G - 8);
+    else if (this.act === 'hide') tap(this.bushes[this.spot], G - 18);
+    else if (this.act === 'stars' && this.picked.includes(false)) tap(...this.dots[this.picked.indexOf(false)]);
   }
 
   burst() {
-    for (let i = 0; i < 3; i++) this.hearts.push({ x: this.foxX - 10 + i * 12, y: this.G - 50, life: 1 + i * 0.2 });
+    for (let i = 0; i < 3; i++) this.hearts.push({ x: this.foxX + this.fox.dx - 10 + i * 12, y: this.G - 50, life: 1 + i * 0.2 });
     this.g.sfx('heart');
+  }
+
+  nextAct() {
+    this.act = this.acts.shift() || null;
+    this.p = { phase: 'wait', t: 0, round: 0 };
+    this.fox = { dx: 0, y: 0, face: -1, mode: 'sit' };
+    if (this.act === 'hide') this.p.phase = 'away';
+    if (!this.act) {
+      const st = this.g.state;
+      st.bond = Math.max(st.bond, this.ch + 1);
+      this.g.save();
+    }
   }
 
   update(dt) {
     this.layout();
-    const st = this.g.state;
+    const st = this.g.state, p = this.p, f = this.fox;
     this.t += dt;
-    if (this.toss) {
-      this.toss.t += dt / 0.7;
-      if (this.toss.t >= 1) {
-        this.toss = null;
-        this.fed = true;
-        this.eatT = 1.3;
-        this.burst();
-      }
-    }
+    p.t += dt;
     this.eatT = Math.max(0, this.eatT - dt);
     this.happyT = Math.max(0, this.happyT - dt);
+    this.shake = this.shake.map(v => Math.max(0, v - dt * 2.5));
+
+    if (this.act === 'feed') {
+      if (this.toss) {
+        this.toss.t += dt / 0.7;
+        if (this.toss.t >= 1) { this.toss = null; this.eatT = 1.3; this.burst(); p.phase = 'eat'; p.t = 0; }
+      }
+      f.mode = this.eatT ? 'sniff' : 'sit';
+      if (p.phase === 'eat' && p.t > 1.4) this.nextAct();
+    } else if (this.act === 'pet') {
+      f.mode = this.happyT ? 'happy' : 'sit';
+      if (p.phase === 'joy' && p.t > 1.8) this.nextAct();
+    } else if (this.act === 'fetch') {
+      // le bâton part, le renard court le chercher et le rapporte
+      const far = Math.min(this.VW - 40 - this.foxX, 120);
+      if (p.phase === 'fly' && p.t > 0.6) { p.phase = 'run'; p.t = 0; }
+      if (p.phase === 'run') {
+        f.dx = Math.min(far, f.dx + 260 * dt); f.face = 1; f.mode = 'walk';
+        if (f.dx >= far) { p.phase = 'back'; p.t = 0; this.g.sfx('pad'); }
+      } else if (p.phase === 'back') {
+        f.dx = Math.max(-70, f.dx - 240 * dt); f.face = -1; f.mode = 'walk';
+        if (f.dx <= -70) { p.phase = 'drop'; p.t = 0; this.happyT = 0.9; this.g.sfx('yip'); }
+      } else if (p.phase === 'drop') {
+        f.mode = 'happy';
+        if (p.t > 0.9) {
+          p.round++;
+          if (p.round >= ROUNDS) { this.burst(); p.phase = 'joy'; p.t = 0; }
+          else { p.phase = 'home'; p.t = 0; }
+        }
+      } else if (p.phase === 'home') {
+        f.dx = Math.min(0, f.dx + 200 * dt); f.face = 1; f.mode = 'walk';
+        if (f.dx >= 0) { p.phase = 'wait'; f.face = -1; f.mode = 'sit'; }
+      } else if (p.phase === 'joy') {
+        f.mode = 'happy';
+        if (p.t > 1.6) this.nextAct();
+      }
+    } else if (this.act === 'hide') {
+      // le renard file se cacher ; on le cherche derrière les buissons
+      if (p.phase === 'away') {
+        f.dx += 300 * dt; f.face = 1; f.mode = 'walk';
+        if (this.foxX + f.dx > this.VW + 50) { p.phase = 'hidden'; p.t = 0; this.spot = (this.spot + 1 + Math.floor(Math.random() * 2)) % 3; }
+      } else if (p.phase === 'found') {
+        const k = Math.min(1, p.t / 0.6), from = this.bushes[this.spot] - this.foxX;
+        f.dx = from * (1 - k); f.y = -40 * Math.sin(Math.PI * k); f.face = from > 0 ? -1 : 1; f.mode = k < 1 ? 'walk' : 'happy';
+        if (p.t > 1.5) {
+          p.round++;
+          if (p.round >= ROUNDS) { this.burst(); p.phase = 'joy'; p.t = 0; f.dx = 0; f.y = 0; }
+          else { p.phase = 'away'; p.t = 0; f.y = 0; }
+        }
+      } else if (p.phase === 'joy') {
+        f.mode = 'happy'; f.face = -1;
+        if (p.t > 1.4) this.nextAct();
+      }
+    } else if (this.act === 'stars') {
+      f.mode = 'sit';
+      if (p.phase === 'joy' && p.t > 2.6) this.nextAct();
+    } else if (!st.lit) {
+      // les jeux sont finis : on peut encore montrer ses trouvailles, puis le renard s'endort
+      if (this.gift) {
+        this.gift.t += dt / 0.6;
+        if (this.gift.t >= 1) {
+          this.gift = null;
+          this.happyT = 1.2;
+          this.burst();
+          if (findsOf(CHAPTERS[this.ch].id).every(id => st.shown[id]) && !st.stars[this.ch]) {
+            st.stars[this.ch] = true;     // les trois : une étoile de plus dans la constellation
+            this.g.sfx('crystal');
+          }
+          this.g.save();
+        }
+      }
+      f.mode = this.happyT ? 'happy' : 'sit';
+      this.doneT += dt;
+      if (!this.asleep && !this.gift && !this.happyT && !this.gifts().length && this.doneT > 0.6) this.asleep = true;
+    }
+
     for (const h of this.hearts) { h.y -= 22 * dt; h.life -= dt * 0.7; }
     this.hearts = this.hearts.filter(h => h.life > 0);
-    if (this.fed && this.petted && !this.asleep && !this.eatT && !this.happyT) {
-      this.asleep = true;
-      st.bond = Math.max(st.bond, this.ch + 1);
-      this.g.save();
-    }
-    if (this.asleep) this.doneT += dt;
     if (st.lit && !this.chimed && this.t > 0.8) {
       this.chimed = true;
       this.g.sfx(this.last ? 'relight' : 'crystal');
     }
-    // à la toute fin, des étoiles filantes
     if (st.lit && this.last && Math.random() < dt * 0.6) {
       this.shooting.push({ x: Math.random() * this.VW, y: Math.random() * this.G * 0.5, life: 1 });
     }
@@ -200,12 +332,61 @@ export class Camp {
         disc(ctx, x, y, 1.5, 'rgba(235,232,255,0.28)');
       }
     });
+    if (state && this.g.state.stars[i]) {
+      // l'étoile des trois trouvailles : plus grosse, avec ses rayons
+      const [x, y] = P[0], r = 9 + Math.sin(this.t * 2.4) * 1.5;
+      glow(ctx, x, y, 26, 0.7);
+      poly(ctx, [x, y - r, x + 2, y - 2, x + r, y, x + 2, y + 2, x, y + r, x - 2, y + 2, x - r, y, x - 2, y - 2], '#fff6d8');
+    }
+  }
+
+  bush(ctx, x, G, shake, col, colS) {
+    const w = Math.sin(this.t * 40) * 3 * shake;
+    for (const [dx, r, s] of [[-13, 14, 1], [13, 15, 1], [0, 20, 0]]) {
+      const bx = x + dx + w;
+      poly(ctx, [bx - r, G + 1, bx - r * 0.6, G - r * 0.8, bx, G - r * 1.25, bx + r * 0.7, G - r * 0.7, bx + r, G + 1], s ? colS : col);
+    }
+  }
+
+  // Le carnet : trois trouvailles et deux animaux par région, et l'étoile quand tout a été montré au renard.
+  drawCarnet(ctx) {
+    const { VW, VH } = this, st = this.g.state;
+    ctx.fillStyle = 'rgba(14,13,34,0.7)';
+    ctx.fillRect(0, 0, VW, VH);
+    const W = Math.min(340, VW - 24), rowH = 58, H = rowH * 5 + 36;
+    const x0 = (VW - W) / 2, y0 = (VH - H) / 2;
+    ctx.fillStyle = '#f4ecd8';
+    ctx.beginPath();
+    ctx.roundRect(x0, y0, W, H, 16);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(42,39,80,0.12)';
+    ctx.fillRect(x0 + W / 2 - 0.5, y0 + 14, 1, H - 28);
+    const tint = ['#62c5b8', '#6fbf7a', '#58a6cb', '#b8a6d8', '#f2a78f'];
+    CHAPTERS.forEach((chap, i) => {
+      const y = y0 + 18 + rowH * i + rowH / 2;
+      const items = [...findsOf(chap.id).map(id => ['find', id]), ...CRITTERS[chap.id].map(([k]) => ['seen', k])];
+      const step = (W - 70) / 5;
+      disc(ctx, x0 + 18, y, 6, tint[i]);
+      items.forEach(([type, id], j) => {
+        const x = x0 + 50 + step * j + (j >= 3 ? 10 : 0);
+        const has = type === 'find' ? st.finds[id] : st.seen[id];
+        disc(ctx, x, y, 22, has ? 'rgba(42,39,80,0.9)' : 'rgba(42,39,80,0.1)');
+        if (!has) { disc(ctx, x, y, 2.5, 'rgba(42,39,80,0.3)'); return; }
+        if (type === 'find') icon(ctx, id, x, y, 1.5);
+        else portrait(ctx, id, x, y);
+        if (type === 'find' && st.shown[id]) disc(ctx, x + 16, y - 16, 4, '#f08a3c');   // montrée au renard
+      });
+      if (st.stars[i]) {
+        const x = x0 + W - 16, r = 8;
+        poly(ctx, [x, y - r, x + 2, y - 2, x + r, y, x + 2, y + 2, x, y + r, x - 2, y + 2, x - r, y, x - 2, y - 2], '#f0a63c');
+      }
+    });
   }
 
   draw(ctx) {
     this.layout();
     const { VW, VH, G, cx, t } = this;
-    const st = this.g.state, N = NIGHT[this.ch], pick = p => p[st.lit ? 1 : 0];
+    const st = this.g.state, N = NIGHT[this.ch], pick = p => p[st.lit ? 1 : 0], p = this.p, f = this.fox;
     ctx.save();
     ctx.scale(this.s, this.s);
 
@@ -229,6 +410,25 @@ export class Camp {
     for (let i = 0; i < SKY.length; i++) {
       const earned = i < Math.max(this.ch, st.best | 0) || (i === this.ch && st.lit);
       this.constellation(ctx, i, !earned ? null : i === this.ch && st.lit ? 'new' : 'old');
+    }
+
+    // le jeu des étoiles : quatre étoiles basses à toucher, qui se relient
+    if (this.act === 'stars') {
+      const done = this.picked.every(Boolean);
+      ctx.strokeStyle = 'rgba(255,236,190,0.8)';
+      ctx.lineWidth = 1.4;
+      for (let i = 0; i < 3; i++) {
+        if (!this.picked[i] || !this.picked[i + 1]) continue;
+        ctx.beginPath();
+        ctx.moveTo(...this.dots[i]);
+        ctx.lineTo(...this.dots[i + 1]);
+        ctx.stroke();
+      }
+      this.dots.forEach(([x, y], i) => {
+        if (this.picked[i]) { glow(ctx, x, y, 16, 0.7); disc(ctx, x, y, 3, '#fff6d8'); }
+        else { disc(ctx, x, y, 2.4, '#fff6d8'); ring(ctx, x, y, t + i * 0.3, 12); }
+      });
+      if (done) glow(ctx, cx, G * 0.66 - 8, 120, 0.18);
     }
 
     // horizon
@@ -264,20 +464,64 @@ export class Camp {
     fl(9, 30, '#f8a544', 2);
     fl(5, 18, '#ffe08f', 4);
 
+    // cache-cache : le renard dépasse derrière son buisson
+    const hiding = this.act === 'hide';
+    if (hiding && p.phase === 'hidden') {
+      const bx = this.bushes[this.spot], flick = Math.sin(t * 5) * 3;
+      poly(ctx, [bx + 14, G - 8, bx + 30, G - 16 + flick, bx + 38, G - 10 + flick, bx + 28, G - 2], '#f08a3c');
+      poly(ctx, [bx + 30, G - 16 + flick, bx + 38, G - 10 + flick, bx + 31, G - 9 + flick], '#fff1de');
+      poly(ctx, [bx - 8, G - 24, bx - 4, G - 34, bx, G - 25], '#f08a3c');
+      poly(ctx, [bx + 1, G - 25, bx + 5, G - 34, bx + 9, G - 24], '#f08a3c');
+    }
+
     // personnages
     drawGirl(ctx, this.girlX, G, 1.15, 1, t, false, { sit: true });
-    const foxMode = this.asleep ? 'sleep' : this.happyT ? 'happy' : this.eatT ? 'sniff' : 'sit';
-    drawFox(ctx, this.foxX, G, 1.15, -1, t, foxMode);
+    const shown = !(hiding && (p.phase === 'hidden' || (p.phase === 'away' && this.foxX + f.dx > VW + 40)));
+    if (shown) drawFox(ctx, this.foxX + f.dx, G + f.y, 1.15, f.face, t, this.asleep ? 'sleep' : f.mode);
+    if (hiding) this.bushes.forEach((bx, i) => this.bush(ctx, bx, G, this.shake[i], pick(N.edge), pick(N.hill)));
+    if (hiding && p.phase === 'hidden') this.bushes.forEach(bx => ring(ctx, bx, G - 30, t, 12));
 
-    if (!this.fed && !this.toss && !st.lit) {
+    // le goûter
+    if (this.act === 'feed' && !this.toss && p.phase === 'wait') {
       icon(ctx, this.food, this.foodX, G - 10, 1.1);
       ring(ctx, this.foodX, G - 12, t, 17);
     }
     if (this.toss) {
-      const f = this.toss.t;
-      icon(ctx, this.food, this.foodX + (this.foxX - 24 - this.foodX) * f, G - 10 - Math.sin(Math.PI * f) * 70, 1.1);
+      const k = this.toss.t;
+      icon(ctx, this.food, this.foodX + (this.foxX - 24 - this.foodX) * k, G - 10 - Math.sin(Math.PI * k) * 70, 1.1);
     }
-    if (this.fed && !this.petted && !this.eatT) ring(ctx, this.foxX - 6, G - 44, t, 17);
+    if (this.act === 'pet' && p.phase === 'wait') ring(ctx, this.foxX - 6, G - 44, t, 17);
+
+    // le bâton
+    if (this.act === 'fetch') {
+      const stick = (x, y, a) => {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(a);
+        ctx.fillStyle = '#b98a5e';
+        ctx.fillRect(-11, -1.5, 22, 3);
+        ctx.fillRect(3, -5, 2.5, 5);
+        ctx.restore();
+      };
+      const far = Math.min(VW - 40 - this.foxX, 120), sx0 = this.girlX + 30;
+      if (p.phase === 'wait') { stick(sx0, G - 3, 0.1); ring(ctx, sx0, G - 8, t, 15); }
+      else if (p.phase === 'fly') { const k = Math.min(1, p.t / 0.6); stick(sx0 + (this.foxX + far + 16 - sx0) * k, G - 3 - Math.sin(Math.PI * k) * 90, k * 9); }
+      else if (p.phase === 'run') stick(this.foxX + far + 16, G - 3, 0.2);
+      else if (p.phase === 'back') stick(this.foxX + f.dx - 28, G - 26, 0.1);
+      else if (p.phase === 'drop' || p.phase === 'home') stick(sx0, G - 3, 0.1);
+    }
+
+    // les trouvailles à montrer
+    if (!this.act && !st.lit && !this.asleep) {
+      this.gifts().forEach((id, i) => {
+        icon(ctx, id, this.foodX + i * 30, G - 10, 1.1);
+        ring(ctx, this.foodX + i * 30, G - 12, t + i * 0.3, 13);
+      });
+    }
+    if (this.gift) {
+      const k = this.gift.t;
+      icon(ctx, this.gift.id, this.gift.x0 + (this.foxX - 26 - this.gift.x0) * k, G - 10 - Math.sin(Math.PI * k) * 60, 1.2);
+    }
     for (const h of this.hearts) heart(ctx, h.x, h.y, 1.3, Math.min(1, h.life));
 
     // lien avec le renard : un point par chapitre
@@ -290,10 +534,12 @@ export class Camp {
     const arrow = (x, y, dir) => uiButton(ctx, x, y, dir > 0 ? 'next' : 'back', { r: 24, glowing: dir > 0 });
     if (st.lit) {
       arrow(...this.back, -1);
-      if (!this.last && t > 3) arrow(...this.next, 1);
-    } else if (this.asleep && this.doneT > 1.4) {
+      if (t > 3) arrow(...this.next, 1);
+    } else if (!this.act && this.doneT > 1) {
       arrow(...this.next, 1);
     }
+    uiButton(ctx, this.book[0], this.book[1], 'book', { r: 20 / this.s, active: this.carnet });
+    if (this.carnet) this.drawCarnet(ctx);
     ctx.restore();
   }
 }

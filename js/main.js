@@ -2,6 +2,7 @@ import { load, save, wipe } from './save.js';
 import { Road } from './road.js';
 import { Camp } from './camp.js';
 import { Diorama } from './diorama.js';
+import { Ending } from './ending.js';
 import { Sound } from './audio.js';
 import { CHAPTERS } from './levels.js';
 import { initSettings } from './settings.js';
@@ -28,13 +29,16 @@ const game = {
   view,
   save: () => save(state),
   sfx: name => sound.play(name),
-  mood: lit => sound.mood(state.chapter, lit),
+  mood: (lit, chapter = state.chapter) => sound.mood(chapter, lit),
   go(name) {
     if (!fade.to) fade.to = name;
   },
   // Le nom du chapitre, affiché le temps de se mettre en route.
   announce() {
-    title.querySelector('p').textContent = `chapitre ${state.chapter + 1} · ${CHAPTERS[state.chapter].name}`;
+    game.say(`chapitre ${state.chapter + 1} · ${CHAPTERS[state.chapter].name}`);
+  },
+  say(text) {
+    title.querySelector('p').textContent = text;
     title.hidden = false;
     title.classList.remove('gone');
     titleAt = performance.now();
@@ -49,6 +53,7 @@ const scenes = {
   road: () => new Road(game),
   camp: () => new Camp(game),
   diorama: () => new Diorama(game),
+  ending: () => new Ending(game),
 };
 let scene = (scenes[state.scene] || scenes.road)();
 

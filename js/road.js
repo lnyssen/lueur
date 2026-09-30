@@ -1,6 +1,7 @@
 // Le sentier : marche en vue de côté à travers la région du chapitre, jusqu'au camp.
 import { mix, ease, clamp, rng, poly, disc, glow, ring, hand, drawGirl, drawFox, icon } from './draw.js';
 import { CHAPTERS } from './levels.js';
+import { CRITTERS, makeCritter, updateCritter, drawCritter } from './critters.js';
 
 // Chaque couleur est une paire [éteint, rallumé].
 const MARAIS = {
@@ -16,11 +17,17 @@ const MARAIS = {
   cap: ['#8d8ac0', '#ffffff'],
 };
 
-// Par chapitre : les couleurs, la forme des arbres, le premier plan, les trouvailles, le goûter.
+// Par chapitre : les couleurs, la forme des arbres, le premier plan, les trouvailles, le goûter,
+// et l'obstacle du sentier, différent dans chaque région :
+//   plank  le renard saute et fait tomber une planche
+//   trunk  la fille pousse un tronc mort, trois fois, jusqu'à ce qu'il tombe en travers
+//   tide   des pierres que la marée découvre : il faut passer à marée basse
+//   wind   des rafales : on avance d'un rocher à l'autre entre deux bourrasques
+//   cloud  un nuage fait la navette au-dessus du vide
 const THEMES = {
-  marais: { C: MARAIS, tree: 'pine', front: 1, finds: ['feather', 'shell', 'stone'], food: 'berries' },
+  marais: { C: MARAIS, tree: 'pine', front: 1, finds: ['feather', 'shell', 'stone'], food: 'berries', obstacle: 'plank' },
   foret: {
-    tree: 'round', front: 0.8, finds: ['acorn', 'leaf', 'mushroom'], food: 'myrtilles',
+    tree: 'round', front: 0.8, finds: ['acorn', 'leaf', 'mushroom'], food: 'myrtilles', obstacle: 'trunk', weather: 'leaves',
     C: {
       ...MARAIS,
       skyTop: ['#16223a', '#bfe6c0'], skyBot: ['#3f5a6a', '#fdf3c8'],
@@ -35,7 +42,7 @@ const THEMES = {
     },
   },
   falaises: {
-    tree: 'rock', front: 0.45, finds: ['starfish', 'glass', 'driftwood'], food: 'argousier',
+    tree: 'rock', front: 0.45, finds: ['starfish', 'glass', 'driftwood'], food: 'argousier', obstacle: 'tide',
     C: {
       ...MARAIS,
       skyTop: ['#141c3c', '#9fd6ec'], skyBot: ['#4a4f86', '#ffe9cf'],
@@ -50,7 +57,7 @@ const THEMES = {
     },
   },
   montagne: {
-    tree: 'pine', front: 0, caps: true, finds: ['crystal', 'cone', 'snow'], food: 'eglantine',
+    tree: 'pine', front: 0, caps: true, finds: ['crystal', 'cone', 'snow'], food: 'eglantine', obstacle: 'wind', weather: 'snow',
     C: {
       ...MARAIS,
       skyTop: ['#1b1838', '#f6c9c4'], skyBot: ['#5a4c80', '#fff0dc'],
@@ -65,7 +72,7 @@ const THEMES = {
     },
   },
   ciel: {
-    tree: 'cloud', front: 0, finds: ['stardust', 'moon', 'comet'], food: 'astres',
+    tree: 'cloud', front: 0, finds: ['stardust', 'moon', 'comet'], food: 'astres', obstacle: 'cloud', gap: [1860, 2040], weather: 'sparkle',
     C: {
       ...MARAIS,
       skyTop: ['#0b0a20', '#f7b79a'], skyBot: ['#2f2a60', '#ffeec4'],
@@ -82,7 +89,6 @@ const THEMES = {
 };
 
 const LEN = 3400;
-const GAP = [1900, 1990];
 const BUSH = 1500;
 export const CAMP = 3220;
 const FIND_X = [520, 1180, 2560];
@@ -95,6 +101,18 @@ export class Road {
     this.chapter = CHAPTERS[st.chapter];
     this.theme = THEMES[this.chapter.id];
     this.finds = this.theme.finds.map((id, i) => ({ id, x: FIND_X[i] }));
+    this.ob = this.theme.obstacle;
+    this.gap = this.theme.gap || [1900, 1990];
+    this.hasGap = this.ob !== 'wind';
+    this.rocks = [this.gap[0] - 60, this.gap[0] + 50];   // abris contre le vent
+    this.pushes = 0;
+    this.wob = 0;
+    this.fallT = -1;
+    this.trunkA = st.bridge ? Math.PI / 2 : 0.05;
+    this.riding = false;
+    this.gust = false;
+    this.pounce = null;
+    this.critters = CRITTERS[this.chapter.id].map(([k, x]) => makeCritter(k, x));
     this.t = 0;
     this.light = 0;
     this.cam = 0;
@@ -113,7 +131,6 @@ export class Road {
     this.saveT = 0;
     this.stepT = 0;
     this.leaving = false;
-    this.frogT = -1;
     this.walked = st.x > 200;
     game.mood(st.lit);
     if (!st.lit && st.x < 200) game.announce();
@@ -150,7 +167,7 @@ export class Road {
     }
     this.posts = [];
     for (let x = 300; x < LEN - 100; x += 420) {
-      if (x < GAP[0] - 50 || x > GAP[1] + 50) this.posts.push(x);
+      if (!this.hasGap || x < this.gap[0] - 50 || x > this.gap[1] + 50) this.posts.push(x);
     }
     this.tufts = [];
     for (let x = 0; x < LEN + 400; x += 30 + r() * 90) this.tufts.push([x, 4 + r() * 6]);
@@ -158,6 +175,8 @@ export class Road {
     for (let i = 0; i < 46; i++) this.stars.push([r(), r(), 0.6 + r() * 1.1, r() * 6]);
     this.ripples = [];
     for (let i = 0; i < 90; i++) this.ripples.push([r() * (LEN + 800) - 200, r(), 14 + r() * 30, r() * 6]);
+    this.motes = [];
+    for (let i = 0; i < 44; i++) this.motes.push([r(), r(), 0.6 + r() * 0.8, r() * 6]);
     this.flies = [];
     for (let i = 0; i < 26; i++) this.flies.push([r(), r(), r() * 6, 0.4 + r()]);
   }
@@ -215,24 +234,35 @@ export class Road {
     const st = this.g.state;
     const out = this.finds.filter(f => !st.finds[f.id]);
     if (!st.berries) out.push({ id: 'food', x: BUSH });
+    if (this.ob === 'trunk' && !st.bridge && this.fallT < 0) out.push({ id: 'trunk', x: this.gap[0] - 46 });
     return out;
   }
 
   hitTest(x, y) {
     const st = this.g.state, G = this.G;
+    const [G0, G1] = this.gap;
     if (this.gapReady && !st.bridge) {
       const nearFox = Math.abs(x - this.fox.x) < 44 && y > G - 70 && y < G + 24;
-      const nearPlank = x > GAP[0] - 20 && x < GAP[1] + 60 && y > G - 130 && y < G + 30;
+      const nearPlank = x > G0 - 20 && x < G1 + 60 && y > G - 130 && y < G + 30;
       if (nearFox || nearPlank) return 'leap';
     }
     for (const o of this.things()) {
-      if (Math.abs(x - o.x) < 36 && y > G - 80 && y < G + 26) return o;
+      const tall = o.id === 'trunk';
+      if (Math.abs(x - o.x) < (tall ? 56 : 36) && y > G - (tall ? 130 : 80) && y < G + 26) return o;
     }
     return null;
   }
 
   take(o) {
     const st = this.g.state;
+    if (o.id === 'trunk') {
+      // une poussée : le tronc oscille ; à la troisième il bascule
+      this.pushes++;
+      this.wob = 1;
+      this.g.sfx('plate');
+      if (this.pushes >= 3) { this.fallT = 0; this.g.sfx('leap'); }
+      return;
+    }
     if (o.id === 'food') st.berries = true;
     else st.finds[o.id] = true;
     for (let i = 0; i < 12; i++) {
@@ -263,32 +293,97 @@ export class Road {
     this.t += dt;
     if (st.lit && this.light < 1) this.light = Math.min(1, this.light + dt / 3.5);
 
+    const [G0, G1] = this.gap;
+    const crossed = () => { st.bridge = true; this.g.sfx('light'); this.g.save(); };
+
+    // l'obstacle de la région : jusqu'où peut-elle aller, et qu'est-ce qui la retient
+    let hi = LEN - 40, blown = false;
+    if (!st.bridge) {
+      if (this.ob === 'plank') {
+        hi = G0 - 62;
+      } else if (this.ob === 'trunk') {
+        hi = G0 - 62;
+        this.wob = Math.max(0, this.wob - dt * 1.6);
+        if (this.fallT >= 0) {
+          this.fallT = Math.min(1, this.fallT + dt / 0.9);
+          this.trunkA = 0.05 + (Math.PI / 2 - 0.05) * this.fallT * this.fallT;
+          if (this.fallT >= 1) { this.g.sfx('plank'); crossed(); }
+        }
+      } else if (this.ob === 'tide') {
+        this.low = Math.sin(this.t * (Math.PI * 2 / 7)) < 0.15;
+        if (g.x < G0 - 14 && !this.low) hi = G0 - 20;
+        if (g.x > G1 + 12) crossed();
+      } else if (this.ob === 'wind') {
+        const z0 = G0 - 150, z1 = G1 + 60;
+        this.gust = this.t % 5 < 2.6;
+        const lee = this.rocks.some(rx => g.x > rx - 46 && g.x < rx - 6);
+        blown = this.gust && g.x > z0 && g.x < z1 && !lee;
+        if (g.x >= z1) crossed();
+      } else if (this.ob === 'cloud') {
+        this.cloudX = G0 + 34 + (G1 - G0 - 68) * (0.5 - 0.5 * Math.cos(this.t * (Math.PI * 2 / 6)));
+        if (!this.riding) {
+          hi = G0 - 14;
+          const wantsOver = this.target > g.x + 4 || this.keys.right || (this.hold && this.holdSX / this.s + this.cam > g.x + 20);
+          if (g.x >= G0 - 22 && wantsOver && this.cloudX < G0 + 40) { this.riding = true; this.g.sfx('pad'); }
+        }
+      }
+    } else if (this.ob === 'trunk') {
+      this.trunkA = Math.PI / 2;
+    }
+
     // la fille
     if (this.hold) this.target = this.holdSX / this.s + this.cam;
     if (this.keys.left) { this.target = g.x - 60; this.want = null; }
     if (this.keys.right) { this.target = g.x + 60; this.want = null; }
-    const hi = st.bridge ? LEN - 40 : GAP[0] - 62;
-    this.target = clamp(this.target, 40, hi);
-    const dx = this.target - g.x;
-    g.walking = Math.abs(dx) > 3;
-    if (g.walking) {
-      g.x += Math.sign(dx) * Math.min(Math.abs(dx), 125 * dt);
-      g.face = Math.sign(dx);
-      if (g.x > 260) this.walked = true;
-      this.stepT += dt;
-      if (this.stepT > 0.29) { this.stepT = 0; this.g.sfx('step'); }
-    }
-    if (this.want && Math.abs(this.want.x - g.x) < 34) {
-      g.face = Math.sign(this.want.x - g.x) || 1;
-      this.take(this.want);
-      this.want = null;
+    if (this.riding) {
+      // le nuage l'emporte ; elle descend de l'autre côté
+      g.x = this.cloudX;
+      g.walking = false;
+      g.face = 1;
+      if (this.cloudX > G1 - 40) {
+        this.riding = false;
+        g.x = G1 + 18;
+        this.target = Math.max(this.target, G1 + 60);
+        crossed();
+      }
+    } else {
+      this.target = clamp(this.target, 40, hi);
+      const dx = this.target - g.x;
+      g.walking = Math.abs(dx) > 3;
+      if (blown) {
+        // la rafale : elle piétine et recule un peu, jusqu'à l'abri d'un rocher
+        g.walking = true;
+        g.face = 1;
+        g.x = Math.max(G0 - 150, g.x - 24 * dt);
+        if (dx < 0) g.x += Math.max(dx, -140 * dt);
+      } else if (g.walking) {
+        g.x += Math.sign(dx) * Math.min(Math.abs(dx), 140 * dt);
+        g.face = Math.sign(dx);
+      }
+      if (g.walking) {
+        if (g.x > 260) this.walked = true;
+        this.stepT += dt;
+        if (this.stepT > 0.27) { this.stepT = 0; this.g.sfx('step'); }
+      }
+      if (this.want && Math.abs(this.want.x - g.x) < 34) {
+        g.face = Math.sign(this.want.x - g.x) || 1;
+        this.take(this.want);
+        this.want = null;
+      }
     }
 
     // le renard
-    if (this.foxState === 'leap') {
+    const waitsAtEdge = !st.bridge && g.x > G0 - 170 && (this.ob === 'plank' || this.ob === 'trunk' || (this.ob === 'tide' && !this.low) || (this.ob === 'cloud' && !this.riding));
+    if (this.riding) {
+      f.x = g.x - 22;
+      f.y = 0;
+      f.face = 1;
+      f.mode = 'sit';
+      this.foxState = 'follow';
+    } else if (this.foxState === 'leap') {
       this.leapT += dt / 0.7;
       const k = Math.min(1, this.leapT);
-      f.x = GAP[0] - 24 + (GAP[1] + 30 - (GAP[0] - 24)) * k;
+      f.x = G0 - 24 + (G1 + 30 - (G0 - 24)) * k;
       f.y = -52 * Math.sin(Math.PI * k);
       f.face = 1;
       f.mode = 'walk';
@@ -298,20 +393,23 @@ export class Road {
       const k = Math.min(1, this.leapT);
       this.plankA = 1.45 * (1 - k * k);
       if (k >= 1) {
-        st.bridge = true;
         this.g.sfx('plank');
-        this.g.save();
+        crossed();
         this.foxState = 'wait';
         f.idle = 0;
       }
     } else if (this.foxState === 'wait') {
       f.face = -1;
       f.mode = 'happy';
-      if (g.x > GAP[1] - 10) this.foxState = 'follow';
-    } else if (!st.bridge && g.x > GAP[0] - 170) {
+      if (g.x > G1 - 10) this.foxState = 'follow';
+    } else if (waitsAtEdge) {
       if (this.foxState !== 'gap') this.g.sfx('yip');
       this.foxState = 'gap';
-      if (this.moveFox(GAP[0] - 24, dt)) { f.face = 1; f.mode = 'sit'; this.gapReady = true; }
+      if (this.moveFox(G0 - 24, dt)) {
+        f.face = 1;
+        f.mode = this.wob > 0.2 ? 'happy' : 'sit';
+        this.gapReady = this.ob === 'plank';
+      }
     } else if (!st.berries && Math.abs(g.x - (BUSH - 40)) < 230) {
       if (this.foxState !== 'bush') this.g.sfx('yip');
       this.foxState = 'bush';
@@ -320,18 +418,41 @@ export class Road {
     } else {
       this.foxState = 'follow';
       this.gapReady = false;
-      if (this.moveFox(g.x - 46 * g.face, dt)) {
-        f.face = g.face;
-        f.mode = f.idle > 1.6 ? 'sit' : 'idle';
+      if (this.pounce && !g.walking) {
+        // il mulote : un bond, le museau dans l'herbe
+        const p = this.pounce;
+        p.t += dt;
+        const k = Math.min(1, p.t / 0.5);
+        f.x = p.x0 + p.dir * 30 * k;
+        f.y = -28 * Math.sin(Math.PI * k);
+        f.face = p.dir;
+        f.mode = k < 1 ? 'walk' : 'sniff';
+        if (p.t > 1.5) { this.pounce = null; f.idle = 0; }
+      } else {
+        this.pounce = null;
+        f.y = 0;
+        if (this.moveFox(g.x - 46 * g.face, dt)) {
+          f.face = g.face;
+          f.mode = f.idle > 1.6 ? 'sit' : 'idle';
+          if (f.idle > 3.2 && Math.random() < dt * 0.5) {
+            this.pounce = { t: 0, x0: f.x, dir: Math.random() < 0.5 ? -1 : 1 };
+            this.g.sfx('pad');
+          }
+        }
+      }
+    }
+
+    // les animaux
+    for (const c of this.critters) {
+      if (updateCritter(c, g.x, dt, this.g.sfx)) {
+        (st.seen ||= {})[c.kind] = true;
+        this.g.save();
       }
     }
 
     this.cam = clamp(g.x - this.VW * 0.42, 0, LEN - this.VW);
     for (const p of this.sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 40 * dt; p.life -= dt * 1.4; }
     this.sparks = this.sparks.filter(p => p.life > 0);
-
-    if (st.lit && this.frogT < 0 && Math.abs(g.x - 860) < 60) this.frogT = 0;
-    if (this.frogT >= 0) { this.frogT += dt / 0.6; if (this.frogT > 1) this.frogT = -1; }
 
     this.saveT += dt;
     if (this.saveT > 2 && !this.leaving) { this.saveT = 0; st.x = g.x; this.g.save(); }
@@ -451,6 +572,103 @@ export class Road {
     if (L > 0.02) glow(ctx, gx, gy, 58, 0.5 * L);
   }
 
+  obstacle(ctx, G, L, c, t) {
+    const st = this.g.state, [G0, G1] = this.gap, ob = this.ob;
+    if (ob === 'plank') {
+      const hx = G1 + 2, len = G1 - G0 + 6;
+      ctx.save();
+      ctx.translate(hx, G + 2);
+      ctx.rotate(this.plankA);
+      ctx.fillStyle = c('wood');
+      ctx.fillRect(-len, -4, len, 6);
+      ctx.fillStyle = c('post');
+      ctx.fillRect(-len, 2, len, 2);
+      ctx.restore();
+      ctx.fillStyle = c('post');
+      ctx.fillRect(hx + 2, G - 16, 4, 18);
+    } else if (ob === 'trunk') {
+      const len = G1 - G0 + 22;
+      ctx.save();
+      ctx.translate(G0 - 8, G + 2);
+      ctx.rotate(this.trunkA + Math.sin(t * 14) * 0.07 * this.wob * (1 + this.pushes * 0.5));
+      poly(ctx, [-7, 0, -5, -len, 5, -len, 7, 0], c('wood'));
+      poly(ctx, [0, 0, 0, -len, 5, -len, 7, 0], c('post'));
+      poly(ctx, [4, -len * 0.55, 20, -len * 0.72, 18, -len * 0.66, 4, -len * 0.45], c('post'));
+      poly(ctx, [-4, -len * 0.75, -16, -len * 0.9, -13, -len * 0.82, -4, -len * 0.68], c('wood'));
+      ctx.restore();
+      poly(ctx, [G0 - 17, G + 2, G0 - 14, G - 6, G0 - 1, G - 6, G0 + 1, G + 2], c('post'));
+    } else if (ob === 'tide') {
+      // trois pierres, et la mer qui monte et redescend dessus
+      const lvl = st.bridge ? 1 : Math.max(0, Math.min(1, 0.5 - Math.sin(t * (Math.PI * 2 / 7)) * 1.4));
+      for (let i = 0; i < 3; i++) {
+        const sx = G0 + 15 + i * 30;
+        poly(ctx, [sx - 12, G + 26, sx - 10, G + 1, sx + 9, G, sx + 12, G + 26], c('ground'));
+        poly(ctx, [sx - 10, G + 1, sx + 9, G, sx + 8, G + 5, sx - 9, G + 6], c('edge'));
+      }
+      const wy = G + 9 - (1 - lvl) * 13;
+      ctx.fillStyle = c('water');
+      ctx.globalAlpha = 0.92;
+      ctx.fillRect(G0, wy, G1 - G0, G + 30 - wy);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = c('waterHi');
+      for (let i = 0; i < 4; i++) ctx.fillRect(G0 + 6 + i * 22 + Math.sin(t * 2 + i) * 5, wy - 1, 12, 2);
+      if (!st.bridge && lvl > 0.6 && this.girl.x > G0 - 200 && this.girl.x < G0) ring(ctx, G0 + 15, G - 10, t, 9);
+    } else if (ob === 'wind') {
+      for (const rx of this.rocks) {
+        poly(ctx, [rx - 6, G + 2, rx - 2, G - 40, rx + 12, G - 48, rx + 14, G + 2], c('ground'));
+        poly(ctx, [rx + 14, G + 2, rx + 12, G - 48, rx + 26, G - 34, rx + 32, G + 2], c('under'));
+        poly(ctx, [rx - 2, G - 40, rx + 12, G - 48, rx + 26, G - 34, rx + 14, G - 38], c('edge'));
+      }
+      if (this.gust && !st.bridge) {
+        ctx.strokeStyle = mix(['#d9d6f2', '#ffffff'], L, 0.55);
+        ctx.lineWidth = 1.4;
+        for (let i = 0; i < 9; i++) {
+          const wx = G1 + 80 - ((t * 420 + i * 53) % 360), wy = G - 12 - i * 9;
+          ctx.beginPath();
+          ctx.moveTo(wx, wy);
+          ctx.quadraticCurveTo(wx + 20, wy - 4, wx + 46, wy);
+          ctx.stroke();
+        }
+      }
+    } else if (ob === 'cloud') {
+      const puff = (px, a) => {
+        ctx.globalAlpha = a;
+        for (const [dx, r] of [[-20, 12], [0, 17], [20, 12]]) {
+          ctx.beginPath();
+          ctx.ellipse(px + dx, G + 8, r * 1.5, r, 0, Math.PI, 0);
+          ctx.fillStyle = mix(dx > 0 ? ['#8f8ad0', '#f4e0d4'] : ['#aca8e6', '#ffffff'], L);
+          ctx.fill();
+        }
+        ctx.fillStyle = mix(['#8f8ad0', '#f4e0d4'], L);
+        ctx.fillRect(px - 38, G + 7, 76, 5);
+        ctx.globalAlpha = 1;
+      };
+      if (st.bridge) for (let px = G0 + 34; px < G1; px += 56) puff(px, 1);
+      else puff(this.cloudX || G0 + 34, 1);
+    }
+  }
+
+  // ce qui tombe ou flotte dans l'air de la région
+  weather(ctx, L) {
+    const kind = this.theme.weather;
+    if (!kind) return;
+    const { VW, G, t } = this, wind = this.gust && !this.g.state.bridge ? 5 : 1;
+    for (const [u, v, sz, ph] of this.motes) {
+      const vx = kind === 'snow' ? -30 * wind : kind === 'leaves' ? -14 : 6;
+      const vy = kind === 'snow' ? 34 : kind === 'leaves' ? 22 : -5;
+      const x = (((u * (VW + 40) + t * vx * sz - this.cam * 0.7) % (VW + 40)) + VW + 40) % (VW + 40) - 20 + Math.sin(t * 1.3 + ph) * 8;
+      const y = (((v * G + t * vy * sz) % G) + G) % G;
+      if (kind === 'snow') disc(ctx, x, y, 1.2 * sz, 'rgba(255,255,255,0.75)');
+      else if (kind === 'leaves') {
+        if (ph > 2.4) continue;
+        const a = t * 2 + ph;
+        poly(ctx, [x - 3 * Math.cos(a), y - 3 * Math.sin(a), x + 1.5 * Math.sin(a), y - 1.5 * Math.cos(a), x + 3 * Math.cos(a), y + 3 * Math.sin(a), x - 1.5 * Math.sin(a), y + 1.5 * Math.cos(a)], mix(['#6a7fa0', '#f0a04a'], L, 0.85));
+      } else {
+        disc(ctx, x, y, 1.1 * sz, `rgba(255,244,200,${0.35 + 0.35 * Math.sin(t * 2 + ph)})`);
+      }
+    }
+  }
+
   draw(ctx) {
     this.layout();
     const { VW, VH, G, t } = this;
@@ -498,21 +716,8 @@ export class Road {
     ctx.save();
     ctx.translate(-this.cam, 0);
 
-    // dans le marais : un nénuphar et, une fois la lumière revenue, une grenouille (clin d'œil à la mare)
-    if (this.chapter.id === 'marais') {
-      ctx.beginPath();
-      ctx.ellipse(860, G + 44, 20, 6, 0, 0.3, Math.PI * 2);
-      ctx.lineTo(860, G + 44);
-      ctx.fillStyle = mix(['#3f6b78', '#7ecb8f'], L);
-      ctx.fill();
-      if (st.lit) {
-        const k = this.frogT >= 0 ? this.frogT : 0;
-        const fx = 858 + k * 14, fy = G + 41 - Math.sin(Math.PI * k) * 16;
-        poly(ctx, [fx - 7, fy, fx - 5, fy - 6, fx + 3, fy - 7, fx + 7, fy - 3, fx + 6, fy], '#5fae5a');
-        disc(ctx, fx + 3, fy - 6.5, 2, '#eef7d8');
-        disc(ctx, fx + 3.5, fy - 6.5, 0.9, '#2b2748');
-      }
-    }
+    const view = { cam: this.cam, VW };
+    for (const cr of this.critters) drawCritter(ctx, cr, G, t, L, 'back', view);
 
     // berge
     const bank = (x1, x2) => {
@@ -523,25 +728,20 @@ export class Road {
       ctx.fillStyle = c('edge');
       ctx.fillRect(x1, G, x2 - x1, 6.5);
     };
-    bank(-300, GAP[0]);
-    bank(GAP[1], LEN + 900);
+    const [G0, G1] = this.gap;
+    if (this.hasGap) {
+      bank(-300, G0);
+      bank(G1, LEN + 900);
+    } else {
+      bank(-300, LEN + 900);
+    }
     for (const [x, h] of this.tufts) {
-      if (x > GAP[0] - 8 && x < GAP[1] + 8) continue;
+      if (this.hasGap && x > G0 - 8 && x < G1 + 8) continue;
       poly(ctx, [x - 3, G + 0.5, x, G - h, x + 3, G + 0.5], c('edge'));
     }
 
-    // planche du gué
-    const hx = GAP[1] + 2, len = GAP[1] - GAP[0] + 6;
-    ctx.save();
-    ctx.translate(hx, G + 2);
-    ctx.rotate(this.plankA);
-    ctx.fillStyle = c('wood');
-    ctx.fillRect(-len, -4, len, 6);
-    ctx.fillStyle = c('post');
-    ctx.fillRect(-len, 2, len, 2);
-    ctx.restore();
-    ctx.fillStyle = c('post');
-    ctx.fillRect(hx + 2, G - 16, 4, 18);
+    this.obstacle(ctx, G, L, c, t);
+    for (const cr of this.critters) drawCritter(ctx, cr, G, t, L, 'front', view);
 
     // les lumières du sentier, une forme par région
     for (const x of this.posts) this.lamp(ctx, x, G, L, c);
@@ -569,15 +769,18 @@ export class Road {
     }
     poly(ctx, [CAMP + 28, G, CAMP + 50, G - 7, CAMP + 53, G - 3, CAMP + 31, G + 3], c('post'));
     poly(ctx, [CAMP + 52, G, CAMP + 30, G - 7, CAMP + 27, G - 3, CAMP + 49, G + 3], c('wood'));
-    ring(ctx, CAMP + 40, G - 24, t, 10);
+    if (!this.g.quiet) ring(ctx, CAMP + 40, G - 24, t, 10);
 
     // personnages
     if (this.gapReady && !st.bridge) ring(ctx, this.fox.x + 4, G - 46, t);
     drawFox(ctx, this.fox.x, G + this.fox.y, 1, this.fox.face, t, this.fox.mode);
     drawGirl(ctx, this.girl.x, G, 1, this.girl.face, t, this.girl.walking);
+    if (this.ob === 'trunk' && !st.bridge && this.fallT < 0 && this.girl.x > G0 - 260) ring(ctx, G0 - 8, G - 60, t);
 
     for (const p of this.sparks) disc(ctx, p.x, p.y, 1.8, `rgba(255,236,190,${p.life})`);
     ctx.restore();
+
+    this.weather(ctx, L);
 
     // herbes du premier plan
     if (this.theme.front) {
@@ -613,8 +816,8 @@ export class Road {
       hand(ctx, Math.min(VW - 50, this.girl.x - this.cam + 130), G - 26, t);
     }
 
-    // besace : les trois trouvailles du chapitre et le goûter
-    const slots = [...this.theme.finds, 'food'];
+    // besace : les trois trouvailles du chapitre et le goûter (pas pendant la scène de fin)
+    const slots = this.g.quiet ? [] : [...this.theme.finds, 'food'];
     for (let i = 0; i < slots.length; i++) {
       const id = slots[i], has = id === 'food' ? st.berries : st.finds[id];
       const x = 26 + i * 34, y = 28;
@@ -632,3 +835,4 @@ export class Road {
 
 // Le goûter du chapitre, pour le camp.
 export const foodOf = chapterId => THEMES[chapterId].food;
+export const findsOf = chapterId => THEMES[chapterId].finds;

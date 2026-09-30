@@ -182,6 +182,20 @@ export class Sound {
       case 'leap': this.noise(t, 0.4, 0.06, 500, 1600); break;
       case 'plank': this.bell(110, t, 0.35, 0.2); this.noise(t, 0.12, 0.08, 700, 250); break;
       case 'light': [0, 1, 2, 3].forEach((d, i) => this.bell(maj(d), t + i * 0.11, 1.6, 0.07)); break;
+      case 'plop': this.noise(t, 0.12, 0.09, 500, 160); this.bell(240, t + 0.02, 0.2, 0.06); break;
+      case 'flap': for (let i = 0; i < 5; i++) this.noise(t + i * 0.09, 0.06, 0.05, 900, 500); break;
+      case 'hoot': this.bell(330, t, 0.35, 0.09); this.bell(262, t + 0.32, 0.6, 0.09); break;
+      case 'whistle': {
+        const o = this.bell(1700, t, 0.3, 0.05);
+        o.frequency.exponentialRampToValueAtTime(2300, t + 0.08);
+        break;
+      }
+      case 'whale': {
+        const o = this.bell(110, t, 3.5, 0.12, 'triangle');
+        o.frequency.exponentialRampToValueAtTime(175, t + 1.4);
+        o.frequency.exponentialRampToValueAtTime(98, t + 3.2);
+        break;
+      }
       case 'relight':
         [0, 1, 2, 3, 4, 5, 6].forEach((d, i) => this.bell(maj(d), t + i * 0.16, 3.2, 0.07));
         [0, 2].forEach(d => this.bell(maj(d) / 4, t, 4, 0.12, 'triangle'));
