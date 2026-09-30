@@ -334,3 +334,57 @@ export function heart(ctx, x, y, s, alpha) {
   ctx.fill();
   ctx.restore();
 }
+
+// Empreinte de renard : le signe de l'indice.
+export function paw(ctx, x, y, t, s = 1) {
+  const k = s * (1 + 0.12 * Math.sin(t * 4));
+  glow(ctx, x, y, 22 * k, 0.45);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(k, k * 0.62);
+  ctx.fillStyle = 'rgba(255,236,190,0.96)';
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 6.5, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  for (const [dx, dy] of [[-7, -3], [-2.5, -7], [2.5, -7], [7, -3]]) {
+    ctx.beginPath();
+    ctx.ellipse(dx, dy, 2.4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Main fantôme qui montre où toucher, pour apprendre le premier geste sans un mot.
+export function hand(ctx, x, y, t) {
+  const p = (t * 0.9) % 1;
+  const press = p < 0.25 ? p / 0.25 : p < 0.45 ? 1 : Math.max(0, 1 - (p - 0.45) / 0.2);
+  if (p > 0.25 && p < 0.8) {
+    const r = (p - 0.25) / 0.55;
+    ctx.strokeStyle = `rgba(255,255,255,${0.8 * (1 - r)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 6 + r * 18, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.save();
+  ctx.translate(x + 3, y + 14 - press * 10);
+  ctx.rotate(-0.35);
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-4, 0);
+  ctx.arc(0, 0, 4, Math.PI, 0);
+  ctx.lineTo(4, 14);
+  ctx.lineTo(12, 16);
+  ctx.arc(10, 22, 6, -1.2, 0.6);
+  ctx.lineTo(10, 34);
+  ctx.lineTo(-7, 34);
+  ctx.lineTo(-11, 22);
+  ctx.lineTo(-4, 18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}

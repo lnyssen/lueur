@@ -53,8 +53,18 @@ Chaque chapitre ajoute une idée au diorama, et garde celles d'avant.
 ## État
 
 Les cinq chapitres sont jouables de bout en bout : sentier, camp, trois dioramas, lumière rallumée,
-constellation. Musique et bruitages générés (Web Audio), indice du renard après 22 secondes sans
-bouger, installable comme appli (manifest + service worker, jouable hors ligne).
+constellation. Musique et bruitages générés (Web Audio), installable comme appli (manifest +
+service worker, jouable hors ligne).
+
+Dans les dioramas :
+- l'indice (une empreinte) apparaît après 22 secondes sans bouger, ou en touchant le renard
+  quand il est déjà choisi ;
+- sur petit écran la vue se rapproche du personnage actif ; le bouton aux quatre coins montre
+  tout le diorama ;
+- recommencer demande deux appuis ;
+- une dalle et ce qui la commande portent le même motif gravé ; une dalle baissée se voit en
+  pointillé ;
+- au tout premier diorama, une main montre quoi toucher.
 
 ## Fichiers
 

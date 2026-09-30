@@ -1,5 +1,5 @@
 // Le sentier : marche en vue de côté à travers la région du chapitre, jusqu'au camp.
-import { mix, ease, clamp, rng, poly, disc, glow, ring, drawGirl, drawFox, icon } from './draw.js';
+import { mix, ease, clamp, rng, poly, disc, glow, ring, hand, drawGirl, drawFox, icon } from './draw.js';
 import { CHAPTERS } from './levels.js';
 
 // Chaque couleur est une paire [éteint, rallumé].
@@ -114,6 +114,7 @@ export class Road {
     this.stepT = 0;
     this.leaving = false;
     this.frogT = -1;
+    this.walked = st.x > 200;
     game.mood(st.lit);
     if (!st.lit && st.x < 200) game.announce();
 
@@ -273,6 +274,7 @@ export class Road {
     if (g.walking) {
       g.x += Math.sign(dx) * Math.min(Math.abs(dx), 125 * dt);
       g.face = Math.sign(dx);
+      if (g.x > 260) this.walked = true;
       this.stepT += dt;
       if (this.stepT > 0.29) { this.stepT = 0; this.g.sfx('step'); }
     }
@@ -397,6 +399,58 @@ export class Road {
     }
   }
 
+  lamp(ctx, x, G, L, c) {
+    const id = this.chapter.id, glass = mix(['#55527f', '#ffdf8e'], L);
+    let gx = x, gy = G - 60;
+    ctx.fillStyle = c('post');
+    if (id === 'foret') {
+      // lampion rond pendu à une branche
+      ctx.fillRect(x - 1.5, G - 80, 3, 82);
+      ctx.fillRect(x - 1.5, G - 80, 19, 2.5);
+      ctx.fillRect(x + 15, G - 78, 1.2, 9);
+      gx = x + 15.5; gy = G - 61;
+      disc(ctx, gx, gy, 8, glass);
+      ctx.fillStyle = c('post');
+      ctx.fillRect(gx - 4, gy - 9.5, 8, 2.5);
+      ctx.fillRect(gx - 3, gy + 7, 6, 2);
+    } else if (id === 'falaises') {
+      // balise rayée
+      poly(ctx, [x - 7, G + 1, x - 4, G - 58, x + 4, G - 58, x + 7, G + 1], c('post'));
+      poly(ctx, [x - 5.6, G - 26, x - 4.6, G - 44, x + 4.6, G - 44, x + 5.6, G - 26], c('wood'));
+      gy = G - 66;
+      disc(ctx, x, gy, 7, glass);
+      ctx.fillStyle = c('post');
+      ctx.fillRect(x - 6, gy + 6, 12, 2.5);
+    } else if (id === 'montagne') {
+      // cairn : des pierres empilées, la dernière s'allume
+      const stones = [[13, 0, 12], [10, 12, 10], [8, 22, 9], [5.5, 31, 7]];
+      for (const [w, y, h] of stones) poly(ctx, [x - w, G - y + 1, x - w * 0.8, G - y - h, x + w * 0.7, G - y - h - 1, x + w, G - y + 1], c('post'));
+      gy = G - 44;
+      poly(ctx, [x - 5, gy + 5, x - 3, gy - 5, x + 4, gy - 6, x + 6, gy + 5], glass);
+    } else if (id === 'ciel') {
+      // une étoile au bout d'une tige
+      ctx.fillRect(x - 1, G - 64, 2, 66);
+      gy = G - 72;
+      const pts = [];
+      for (let i = 0; i < 8; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 4, r = i % 2 ? 4 : 11;
+        pts.push(x + Math.cos(a) * r, gy + Math.sin(a) * r);
+      }
+      poly(ctx, pts, glass);
+    } else {
+      // lanterne du marais
+      ctx.fillRect(x - 1.5, G - 76, 3, 78);
+      ctx.fillRect(x - 1.5, G - 76, 17, 2.5);
+      ctx.fillRect(x + 13, G - 74, 1.2, 8);
+      ctx.fillRect(x + 9, G - 67, 9, 2);
+      ctx.fillRect(x + 9, G - 54, 9, 2);
+      ctx.fillStyle = glass;
+      ctx.fillRect(x + 10, G - 65, 7, 11);
+      gx = x + 13.5;
+    }
+    if (L > 0.02) glow(ctx, gx, gy, 58, 0.5 * L);
+  }
+
   draw(ctx) {
     this.layout();
     const { VW, VH, G, t } = this;
@@ -416,7 +470,8 @@ export class Road {
       const a = (1 - L) * (0.45 + 0.4 * Math.sin(t * 1.3 + ph));
       if (a > 0.02) disc(ctx, u * VW, v * G * 0.7, r, `rgba(235,232,255,${a})`);
     }
-    const mx = VW * 0.78 - this.cam * 0.02, my = G * 0.3;
+    const tall = VH > VW;
+    const mx = VW * (tall ? 0.76 : 0.87) - this.cam * 0.02, my = G * (tall ? 0.55 : 0.3);
     glow(ctx, mx, my, 90, 0.18 + 0.3 * L, '255,240,205');
     disc(ctx, mx, my, 24, c('moon'));
 
@@ -488,18 +543,8 @@ export class Road {
     ctx.fillStyle = c('post');
     ctx.fillRect(hx + 2, G - 16, 4, 18);
 
-    // lanternes du sentier
-    for (const x of this.posts) {
-      ctx.fillStyle = c('post');
-      ctx.fillRect(x - 1.5, G - 76, 3, 78);
-      ctx.fillRect(x - 1.5, G - 76, 17, 2.5);
-      ctx.fillRect(x + 13, G - 74, 1.2, 8);
-      ctx.fillRect(x + 9, G - 67, 9, 2);
-      ctx.fillRect(x + 9, G - 54, 9, 2);
-      ctx.fillStyle = mix(['#55527f', '#ffdf8e'], L);
-      ctx.fillRect(x + 10, G - 65, 7, 11);
-      if (L > 0.02) glow(ctx, x + 13.5, G - 60, 58, 0.5 * L);
-    }
+    // les lumières du sentier, une forme par région
+    for (const x of this.posts) this.lamp(ctx, x, G, L, c);
 
     // le buisson où le renard flaire le goûter
     for (const [dx, r, shade] of [[-16, 15, 1], [14, 17, 1], [0, 21, 0]]) {
@@ -562,6 +607,10 @@ export class Road {
         const a = L * (0.4 + 0.5 * Math.sin(t * 2.2 + ph * 3));
         if (a > 0) { glow(ctx, x, y, 9, a * 0.6); disc(ctx, x, y, 1.4, `rgba(255,244,190,${a})`); }
       }
+    }
+
+    if (st.chapter === 0 && !st.lit && !this.walked && this.t > 2.5) {
+      hand(ctx, Math.min(VW - 50, this.girl.x - this.cam + 130), G - 26, t);
     }
 
     // besace : les trois trouvailles du chapitre et le goûter
