@@ -22,7 +22,8 @@ const MARAIS = {
 //   plank  le renard saute et fait tomber une planche
 //   trunk  la fille pousse un tronc mort, trois fois, jusqu'à ce qu'il tombe en travers
 //   tide   des pierres que la marée découvre : il faut passer à marée basse
-//   wind   des rafales : on avance d'un rocher à l'autre entre deux bourrasques
+//   wind   « 1, 2, 3, soleil » : on s'arrête quand la rafale souffle, sinon elle renvoie au début
+//          du passage. Le renard se couche juste avant, et derrière un rocher on est à l'abri.
 //   cloud  un nuage fait la navette au-dessus du vide
 const THEMES = {
   marais: { C: MARAIS, tree: 'pine', front: 1, finds: ['feather', 'shell', 'stone'], food: 'berries', obstacle: 'plank' },
@@ -104,7 +105,9 @@ export class Road {
     this.ob = this.theme.obstacle;
     this.gap = this.theme.gap || [1900, 1990];
     this.hasGap = this.ob !== 'wind';
-    this.rocks = [this.gap[0] - 60, this.gap[0] + 50];   // abris contre le vent
+    this.zone = [this.gap[0] - 260, this.gap[1] + 160];     // le passage venté
+    this.rocks = [this.gap[0] - 150, this.gap[0] + 30, this.gap[1] + 90];   // abris contre le vent
+    this.wind = { phase: 'calm', t: 0, calm: 2.4 };
     this.pushes = 0;
     this.wob = 0;
     this.fallT = -1;
@@ -298,6 +301,7 @@ export class Road {
 
     // l'obstacle de la région : jusqu'où peut-elle aller, et qu'est-ce qui la retient
     let hi = LEN - 40, blown = false;
+    this.brace = false;
     if (!st.bridge) {
       if (this.ob === 'plank') {
         hi = G0 - 62;
@@ -314,10 +318,29 @@ export class Road {
         if (g.x < G0 - 14 && !this.low) hi = G0 - 20;
         if (g.x > G1 + 12) crossed();
       } else if (this.ob === 'wind') {
-        const z0 = G0 - 150, z1 = G1 + 60;
-        this.gust = this.t % 5 < 2.6;
-        const lee = this.rocks.some(rx => g.x > rx - 46 && g.x < rx - 6);
-        blown = this.gust && g.x > z0 && g.x < z1 && !lee;
+        // calme, puis l'avertissement (le renard se couche), puis la rafale
+        const w = this.wind, [z0, z1] = this.zone, near = g.x > z0 - 220 && g.x < z1;
+        w.t += dt;
+        if (w.phase === 'calm' && w.t > w.calm) {
+          w.phase = 'warn'; w.t = 0;
+          if (near) { this.g.sfx('windup'); this.g.sfx('yip'); }
+        } else if (w.phase === 'warn' && w.t > 0.9) {
+          w.phase = 'gust'; w.t = 0;
+          if (near) this.g.sfx('wind');
+        } else if (w.phase === 'gust' && w.t > 1.6) {
+          w.phase = 'calm'; w.t = 0; w.calm = 1.4 + Math.random() * 1.4;
+        }
+        this.gust = w.phase === 'gust';
+        const inZone = g.x > z0 && g.x < z1;
+        const lee = this.rocks.some(rx => g.x > rx - 46 && g.x < rx - 4);
+        const pushing = this.target > g.x + 3 && !this.tumble;
+        this.brace = this.gust && inZone && !lee && !pushing;
+        if (this.gust && inZone && !lee && pushing) {
+          this.tumble = true;          // elle avançait en pleine rafale : le vent la ramène au début
+          this.want = null;
+          this.g.sfx('flap');
+        }
+        blown = this.tumble;
         if (g.x >= z1) crossed();
       } else if (this.ob === 'cloud') {
         this.cloudX = G0 + 34 + (G1 - G0 - 68) * (0.5 - 0.5 * Math.cos(this.t * (Math.PI * 2 / 6)));
@@ -351,13 +374,19 @@ export class Road {
       const dx = this.target - g.x;
       g.walking = Math.abs(dx) > 3;
       if (blown) {
-        // la rafale : elle piétine et recule un peu, jusqu'à l'abri d'un rocher
+        // emportée par la rafale jusqu'au début du passage
+        const back = this.zone[0] - 12;
         g.walking = true;
         g.face = 1;
-        g.x = Math.max(G0 - 150, g.x - 24 * dt);
-        if (dx < 0) g.x += Math.max(dx, -140 * dt);
+        g.x = Math.max(back, g.x - 230 * dt);
+        this.target = g.x;
+        if (g.x <= back) this.tumble = false;
+      } else if (this.brace) {
+        g.walking = false;
       } else if (g.walking) {
-        g.x += Math.sign(dx) * Math.min(Math.abs(dx), 140 * dt);
+        // dans la neige du passage venté, on avance moins vite
+        const deep = this.ob === 'wind' && !st.bridge && g.x > this.zone[0] && g.x < this.zone[1];
+        g.x += Math.sign(dx) * Math.min(Math.abs(dx), (deep ? 95 : 140) * dt);
         g.face = Math.sign(dx);
       }
       if (g.walking) {
@@ -443,6 +472,11 @@ export class Road {
     }
 
     // les animaux
+    // dans le vent, le renard se plaque au sol dès l'avertissement : le signal pour s'arrêter
+    if (this.ob === 'wind' && !st.bridge && this.wind.phase !== 'calm' && f.x > this.zone[0] - 80 && f.x < this.zone[1]) {
+      f.mode = 'sleep';
+    }
+
     for (const c of this.critters) {
       if (updateCritter(c, g.x, dt, this.g.sfx)) {
         (st.seen ||= {})[c.kind] = true;
@@ -619,14 +653,22 @@ export class Road {
         poly(ctx, [rx + 14, G + 2, rx + 12, G - 48, rx + 26, G - 34, rx + 32, G + 2], c('under'));
         poly(ctx, [rx - 2, G - 40, rx + 12, G - 48, rx + 26, G - 34, rx + 14, G - 38], c('edge'));
       }
-      if (this.gust && !st.bridge) {
-        ctx.strokeStyle = mix(['#d9d6f2', '#ffffff'], L, 0.55);
-        ctx.lineWidth = 1.4;
-        for (let i = 0; i < 9; i++) {
-          const wx = G1 + 80 - ((t * 420 + i * 53) % 360), wy = G - 12 - i * 9;
+      const ph = st.bridge ? 'calm' : this.wind.phase;
+      if (ph === 'calm' && this.girl.x > this.zone[0] - 200 && this.girl.x < this.zone[1]) {
+        // l'abri suivant, pour qu'on sache où courir entre deux rafales
+        const nextRock = this.rocks.find(rx => rx - 26 > this.girl.x + 8);
+        if (nextRock) ring(ctx, nextRock - 26, G - 16, t, 10);
+      }
+      if (ph !== 'calm') {
+        const strong = ph === 'gust';
+        ctx.strokeStyle = mix(['#e6e4fa', '#ffffff'], L, strong ? 0.85 : 0.4);
+        ctx.lineWidth = strong ? 2.6 : 1.6;
+        ctx.lineCap = 'round';
+        for (let i = 0; i < (strong ? 14 : 6); i++) {
+          const wx = this.zone[1] + 60 - ((t * (strong ? 520 : 260) + i * 53) % (this.zone[1] - this.zone[0] + 120)), wy = G - 10 - i * 8;
           ctx.beginPath();
           ctx.moveTo(wx, wy);
-          ctx.quadraticCurveTo(wx + 20, wy - 4, wx + 46, wy);
+          ctx.quadraticCurveTo(wx + 30, wy - 6, wx + 70, wy);
           ctx.stroke();
         }
       }
@@ -774,7 +816,7 @@ export class Road {
     // personnages
     if (this.gapReady && !st.bridge) ring(ctx, this.fox.x + 4, G - 46, t);
     drawFox(ctx, this.fox.x, G + this.fox.y, 1, this.fox.face, t, this.fox.mode);
-    drawGirl(ctx, this.girl.x, G, 1, this.girl.face, t, this.girl.walking);
+    drawGirl(ctx, this.girl.x, G, 1, this.girl.face, t, this.girl.walking, { brace: this.brace });
     if (this.ob === 'trunk' && !st.bridge && this.fallT < 0 && this.girl.x > G0 - 260) ring(ctx, G0 - 8, G - 60, t);
 
     for (const p of this.sparks) disc(ctx, p.x, p.y, 1.8, `rgba(255,236,190,${p.life})`);

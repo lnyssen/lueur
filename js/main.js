@@ -115,7 +115,7 @@ function tick(dt) {
 
 let last = performance.now();
 function frame(now) {
-  tick(Math.min(0.05, (now - last) / 1000));
+  if (!window.lueur?.paused) tick(Math.min(0.05, (now - last) / 1000));
   last = now;
   requestAnimationFrame(frame);
 }
@@ -128,6 +128,7 @@ window.lueur = {
   game,
   sound,
   get scene() { return scene; },
+  paused: false,
   step(seconds) {
     for (let i = 0; i < seconds * 30; i++) tick(1 / 30);
   },

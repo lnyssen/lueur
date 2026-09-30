@@ -78,7 +78,7 @@ const INK = '#2b2748';
 export function drawGirl(ctx, x, y, s, facing, t, walking, opts = {}) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(s * facing, s);
+  ctx.scale(s * facing, s * (opts.brace ? 0.78 : 1));   // accroupie contre le vent
   const sw = walking ? Math.sin(t * 11) : 0;
   const bob = walking ? Math.abs(Math.sin(t * 11)) * 1.5 : Math.sin(t * 2) * 0.6;
   if (opts.sit) {

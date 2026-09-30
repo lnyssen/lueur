@@ -196,6 +196,8 @@ export class Sound {
         o.frequency.exponentialRampToValueAtTime(98, t + 3.2);
         break;
       }
+      case 'windup': this.noise(t, 0.9, 0.035, 250, 900); break;
+      case 'wind': this.noise(t, 1.6, 0.09, 900, 260); break;
       case 'relight':
         [0, 1, 2, 3, 4, 5, 6].forEach((d, i) => this.bell(maj(d), t + i * 0.16, 3.2, 0.07));
         [0, 2].forEach(d => this.bell(maj(d) / 4, t, 4, 0.12, 'triangle'));

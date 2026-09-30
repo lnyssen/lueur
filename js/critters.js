@@ -88,6 +88,22 @@ function bird(ctx, x, y, s, flap, body, wing) {
   poly(ctx, [x - 2 * s, y, x + 3 * s, y, x - 1 * s, y - (2 + flap * 8) * s], wing);
 }
 
+// Un oiseau posé : corps rond, tête, bec, aile repliée.
+function perched(ctx, x, y, s, body, wing, beak) {
+  ctx.beginPath();
+  ctx.ellipse(x, y - 5 * s, 8 * s, 5 * s, 0, 0, Math.PI * 2);
+  ctx.fillStyle = body;
+  ctx.fill();
+  poly(ctx, [x - 7 * s, y - 6 * s, x - 13 * s, y - 9 * s, x - 7 * s, y - 3 * s], wing);
+  poly(ctx, [x - 5 * s, y - 8 * s, x + 4 * s, y - 7 * s, x - 1 * s, y - 2 * s], wing);
+  disc(ctx, x + 6 * s, y - 10 * s, 3.6 * s, body);
+  poly(ctx, [x + 9 * s, y - 10.5 * s, x + 14 * s, y - 9.5 * s, x + 9 * s, y - 8.5 * s], beak);
+  disc(ctx, x + 7 * s, y - 11 * s, 0.8 * s, INK);
+  ctx.fillStyle = beak;
+  ctx.fillRect(x - 1 * s, y, 1 * s, 2 * s);
+  ctx.fillRect(x + 2 * s, y, 1 * s, 2 * s);
+}
+
 function legs(ctx, xs, y, len, a, col) {
   ctx.strokeStyle = col;
   ctx.lineWidth = 2.2;
@@ -173,12 +189,17 @@ export function drawCritter(ctx, c, G, t, L, layer, view) {
         by -= f * (60 + i * 9) + Math.sin(f * 3 + ph) * 10;
         flap = 0.5 + 0.5 * Math.sin(f * 14 + ph);
       }
+      const flying = c.state === 'fly';
       if (star) {
-        glow(ctx, bx, by - 3, 12, 0.5);
-        bird(ctx, bx, by - 3, 1, flap, '#fff1c8', '#ffd78a');
-      } else {
+        // oiseaux-étoiles : quatre branches qui battent comme des ailes
+        const sy = flying ? by - 3 : by - 12 + Math.sin(t * 2 + ph) * 3, w = flying ? 4 + flap * 7 : 8;
+        glow(ctx, bx, sy, 14, 0.55);
+        poly(ctx, [bx, sy - 8, bx + 2, sy - 2, bx + w, sy, bx + 2, sy + 2, bx, sy + 6, bx - 2, sy + 2, bx - w, sy, bx - 2, sy - 2], '#fff1c8');
+        disc(ctx, bx, sy, 2, '#ffd78a');
+      } else if (flying) {
         bird(ctx, bx, by, 1.1, flap, L > 0.5 ? '#ffffff' : '#d6d4f2', L > 0.5 ? '#9fb0c8' : '#8e8cc0');
-        disc(ctx, bx + 6, by - 1, 0.8, INK);
+      } else {
+        perched(ctx, bx, by + 6, 1.1, L > 0.5 ? '#ffffff' : '#d6d4f2', L > 0.5 ? '#9fb0c8' : '#8e8cc0', '#f2b64a');
       }
     });
   } else if (k === 'owl') {
@@ -295,7 +316,7 @@ export function portrait(ctx, kind, x, y) {
   ctx.beginPath();
   ctx.arc(x, y, 21, 0, Math.PI * 2);
   ctx.clip();
-  const set = { frog: [0, -44, 1.5], heron: [-6, 12, 0.66], gulls: [14, 7, 2.4], starbirds: [14, 10, 2.4], owl: [-26, 106, 1.1], deer: [-2, 30, 0.72], ibex: [6, 96, 0.8], crab: [0, 10, 1.4], marmot: [0, 10, 1.2], whale: [0, 0, 1] }[kind];
+  const set = { frog: [0, -36, 2.1], heron: [-6, 12, 0.66], gulls: [14, 6, 1.9], starbirds: [14, 12, 1.9], owl: [-26, 106, 1.1], deer: [-4, 32, 0.6], ibex: [8, 106, 0.6], crab: [0, 10, 1.4], marmot: [0, 10, 1.2], whale: [0, 0, 1] }[kind];
   ctx.translate(x, y);
   ctx.scale(set[2], set[2]);
   ctx.translate(set[0], set[1]);

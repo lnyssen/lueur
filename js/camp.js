@@ -78,6 +78,7 @@ export class Camp {
     this.shake = [0, 0, 0];
     this.spot = 0;
     this.picked = [false, false, false, false];
+    this.stickX = null;
     this.gift = null;
     this.carnet = false;
     this.chimed = false;
@@ -160,7 +161,7 @@ export class Camp {
     } else if (this.act === 'pet') {
       if (p.phase === 'wait' && near(this.foxX, G - 22, 46)) { p.phase = 'joy'; p.t = 0; this.happyT = 1.6; this.burst(); }
     } else if (this.act === 'fetch') {
-      if (p.phase === 'wait' && near(this.girlX + 30, G - 8, 34)) { p.phase = 'fly'; p.t = 0; this.g.sfx('leap'); }
+      if (p.phase === 'wait' && near(this.stickAt(), G - 8, 34)) { p.from = this.stickAt(); p.phase = 'fly'; p.t = 0; this.g.sfx('leap'); }
     } else if (this.act === 'hide' && p.phase === 'hidden') {
       const i = this.bushes.findIndex(bx => near(bx, G - 18, 38));
       if (i === this.spot) { p.phase = 'found'; p.t = 0; this.g.sfx('yip'); }
@@ -186,9 +187,14 @@ export class Camp {
     if (!this.act) tap(...this.next);
     else if (this.act === 'feed') tap(this.foodX, G - 12);
     else if (this.act === 'pet') tap(this.foxX, G - 22);
-    else if (this.act === 'fetch') tap(this.girlX + 30, G - 8);
+    else if (this.act === 'fetch') tap(this.stickAt(), G - 8);
     else if (this.act === 'hide') tap(this.bushes[this.spot], G - 18);
     else if (this.act === 'stars' && this.picked.includes(false)) tap(...this.dots[this.picked.indexOf(false)]);
+  }
+
+  // où est le bâton : près de la fille au début, puis là où le renard l'a posé
+  stickAt() {
+    return this.stickX ?? this.girlX + 30;
   }
 
   burst() {
@@ -235,21 +241,21 @@ export class Camp {
         f.dx = Math.min(far, f.dx + 260 * dt); f.face = 1; f.mode = 'walk';
         if (f.dx >= far) { p.phase = 'back'; p.t = 0; this.g.sfx('pad'); }
       } else if (p.phase === 'back') {
-        f.dx = Math.max(-70, f.dx - 240 * dt); f.face = -1; f.mode = 'walk';
-        if (f.dx <= -70) { p.phase = 'drop'; p.t = 0; this.happyT = 0.9; this.g.sfx('yip'); }
+        f.dx = Math.max(50, f.dx - 240 * dt); f.face = -1; f.mode = 'walk';
+        if (f.dx <= 50) { p.phase = 'drop'; p.t = 0; this.happyT = 0.9; this.stickX = this.foxX; this.g.sfx('yip'); }
       } else if (p.phase === 'drop') {
         f.mode = 'happy';
         if (p.t > 0.9) {
           p.round++;
           if (p.round >= ROUNDS) { this.burst(); p.phase = 'joy'; p.t = 0; }
-          else { p.phase = 'home'; p.t = 0; }
+          else { p.phase = 'wait'; p.t = 0; }
         }
-      } else if (p.phase === 'home') {
-        f.dx = Math.min(0, f.dx + 200 * dt); f.face = 1; f.mode = 'walk';
-        if (f.dx >= 0) { p.phase = 'wait'; f.face = -1; f.mode = 'sit'; }
       } else if (p.phase === 'joy') {
-        f.mode = 'happy';
-        if (p.t > 1.6) this.nextAct();
+        // il revient s'asseoir près du feu
+        f.dx = Math.max(0, f.dx - 90 * dt);
+        f.face = -1;
+        f.mode = f.dx > 0 ? 'walk' : 'happy';
+        if (p.t > 1.6 && f.dx <= 0) this.nextAct();
       }
     } else if (this.act === 'hide') {
       // le renard file se cacher ; on le cherche derrière les buissons
@@ -498,17 +504,19 @@ export class Camp {
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(a);
-        ctx.fillStyle = '#b98a5e';
-        ctx.fillRect(-11, -1.5, 22, 3);
-        ctx.fillRect(3, -5, 2.5, 5);
+        ctx.fillStyle = '#5a3e2e';
+        ctx.fillRect(-16, -3, 32, 6);
+        ctx.fillStyle = '#d9a56e';
+        ctx.fillRect(-15, -2, 30, 4);
+        ctx.fillRect(4, -7, 3, 6);
         ctx.restore();
       };
-      const far = Math.min(VW - 40 - this.foxX, 120), sx0 = this.girlX + 30;
+      const far = Math.min(VW - 40 - this.foxX, 120), sx0 = this.stickAt(), from = p.from ?? sx0;
       if (p.phase === 'wait') { stick(sx0, G - 3, 0.1); ring(ctx, sx0, G - 8, t, 15); }
-      else if (p.phase === 'fly') { const k = Math.min(1, p.t / 0.6); stick(sx0 + (this.foxX + far + 16 - sx0) * k, G - 3 - Math.sin(Math.PI * k) * 90, k * 9); }
+      else if (p.phase === 'fly') { const k = Math.min(1, p.t / 0.6); stick(from + (this.foxX + far + 16 - from) * k, G - 3 - Math.sin(Math.PI * k) * 90, k * 9); }
       else if (p.phase === 'run') stick(this.foxX + far + 16, G - 3, 0.2);
-      else if (p.phase === 'back') stick(this.foxX + f.dx - 28, G - 26, 0.1);
-      else if (p.phase === 'drop' || p.phase === 'home') stick(sx0, G - 3, 0.1);
+      else if (p.phase === 'back') stick(this.foxX + f.dx - 40, G - 24, 0.1);
+      else stick(sx0, G - 3, 0.1);
     }
 
     // les trouvailles à montrer

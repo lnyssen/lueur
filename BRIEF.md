@@ -58,7 +58,7 @@ Chaque chapitre ajoute une idée au diorama, et garde celles d'avant.
 | Marais | le renard saute et fait tomber une planche | grenouille, héron | une caresse |
 | Forêt | pousser trois fois un tronc mort | chouette, cerf | lancer un bâton |
 | Falaises | passer les pierres à marée basse | mouettes, crabe | cache-cache |
-| Montagne | avancer de rocher en rocher entre les rafales | marmotte, bouquetin | relier des étoiles |
+| Montagne | « 1, 2, 3, soleil » : s'arrêter quand le renard se couche, avant la rafale | marmotte, bouquetin | relier des étoiles |
 | Ciel | monter sur le nuage qui fait la navette | baleine du ciel, oiseaux-étoiles | une caresse |
 
 Le **carnet** (bouton en haut à gauche du camp) garde les trouvailles et les animaux rencontrés.
